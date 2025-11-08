@@ -13,3 +13,37 @@ categories = [ "network-programming" ]
 
 [dependencies]
 log = "0.4.28"
+
+[dev-dependencies]
+bytes = "1.5.0"
+chrono = "0.4.35"
+env_logger = "0.11.3"
+clap = { version = "4.5.2", features = ["derive"] }
+anyhow = "1.0.80"
+ctrlc = "3.4.2"
+crossbeam-channel = "0.5"
+wg = "0.7"
+
+#[[example]]
+#name = "chat_server_tcp"
+#path = "examples/chat_server_tcp.rs"
+
+[[example]]
+name = "chat_server_udp"
+path = "examples/chat_server_udp.rs"
+
+#[[example]]
+#name = "client_tcp"
+#path = "examples/client_tcp.rs"
+
+#[[example]]
+#name = "client_udp"
+#path = "examples/client_udp.rs"
+
+#[[example]]
+#name = "echo_server_tcp"
+#path = "examples/echo_server_tcp.rs"
+
+#[[example]]
+#name = "echo_server_udp"
+#path = "examples/echo_server_udp.rs"
