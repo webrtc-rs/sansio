@@ -178,7 +178,7 @@ impl<R: 'static, W: 'static> InboundPipeline<R> for Pipeline<R, W> {
         internal.handle_eof();
     }
 
-    /// Reads an Error in one of its inbound operations.
+    /// Handles an Error in one of its inbound operations.
     fn handle_error(&self, err: Box<dyn Error>) {
         let internal = self.internal.borrow();
         internal.handle_error(err);

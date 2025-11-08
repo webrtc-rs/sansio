@@ -85,11 +85,11 @@ pub trait Handler {
         ctx.fire_poll_timeout(eto);
     }
 
-    /// Reads an EOF event.
+    /// Handles an EOF event.
     fn handle_eof(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) {
         ctx.fire_handle_eof();
     }
-    /// Handle an Error in one of its operations.
+    /// Handles an Error in one of its operations.
     fn handle_error(
         &mut self,
         ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>,
@@ -97,7 +97,7 @@ pub trait Handler {
     ) {
         ctx.fire_handle_error(err);
     }
-    /// Handle a close event.
+    /// Handles a close event.
     fn handle_close(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) {
         ctx.fire_handle_close();
     }
@@ -306,7 +306,7 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
         }
     }
 
-    /// Reads an EOF event.
+    /// Handles an EOF event.
     pub fn fire_handle_eof(&self) {
         if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
             let (mut next_handler, next_context) =
@@ -317,7 +317,7 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
         }
     }
 
-    /// Reads an Error in one of its inbound operations.
+    /// Handles an Error in one of its inbound operations.
     pub fn fire_handle_error(&self, err: Box<dyn Error>) {
         if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
             let (mut next_handler, next_context) =
@@ -328,7 +328,7 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
         }
     }
 
-    /// Writes a close event.
+    /// Handles a Close event.
     pub fn fire_handle_close(&self) {
         if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
             let (mut next_handler, next_context) =
