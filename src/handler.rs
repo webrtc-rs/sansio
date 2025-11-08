@@ -1,137 +1,396 @@
-//! Definition of the core `Handler` trait to sansio
-//!
-//! The [`Handler`] trait provides the necessary abstractions for defining
-//! sansio pipeline. It is simple but powerful and is used as the foundation
-//! for the rest of sansio pipeline.
+use crate::handler_internal::{ContextInternal, HandlerInternal};
+use log::{trace, warn};
+use std::any::Any;
+use std::cell::RefCell;
+use std::marker::PhantomData;
+use std::rc::Rc;
+use std::{error::Error, time::Instant};
 
-use std::time::Instant;
+/// Handles both inbound and outbound events
+pub trait Handler {
+    /// Associated read input message type
+    type Rin: 'static;
+    /// Associated read output message type
+    type Rout: 'static;
+    /// Associated write input message type
+    type Win: 'static;
+    /// Associated write output message type for
+    type Wout: 'static;
 
-/// The `Handler` trait is a simplified interface making it easy to write
-/// network applications in a modular and reusable way, decoupled from the
-/// underlying protocol. It is one of sansio fundamental abstractions.
-pub trait Handler<Rin, Win, Ein> {
-    /// Associated output read type
-    type Rout;
-    /// Associated output write type
-    type Wout;
-    /// Associated output event type
-    type Eout;
-    /// Associated result error type
-    type Error;
+    /// Returns handler name
+    fn name(&self) -> &str;
 
-    /// Handles Rin and returns Rout for next inbound handler handling
-    fn handle_read(&mut self, msg: Rin) -> Result<(), Self::Error>;
+    #[doc(hidden)]
+    #[allow(clippy::type_complexity)]
+    fn generate(
+        self,
+    ) -> (
+        String,
+        Rc<RefCell<dyn HandlerInternal>>,
+        Rc<RefCell<dyn ContextInternal>>,
+    )
+    where
+        Self: Sized + 'static,
+    {
+        let handler_name = self.name().to_owned();
+        let context: Context<Self::Rin, Self::Rout, Self::Win, Self::Wout> =
+            Context::new(self.name());
 
-    /// Polls Rout from internal queue for next inbound handler handling
-    fn poll_read(&mut self) -> Option<Self::Rout>;
+        let handler: Box<
+            dyn Handler<Rin = Self::Rin, Rout = Self::Rout, Win = Self::Win, Wout = Self::Wout>,
+        > = Box::new(self);
 
-    /// Handles Win and returns Wout for next outbound handler handling
-    fn handle_write(&mut self, msg: Win) -> Result<(), Self::Error>;
-
-    /// Polls Wout from internal queue for next outbound handler handling
-    fn poll_write(&mut self) -> Option<Self::Wout>;
-
-    /// Handles event
-    fn handle_event(&mut self, _evt: Ein) -> Result<(), Self::Error> {
-        Ok(())
+        (
+            handler_name,
+            Rc::new(RefCell::new(handler)),
+            Rc::new(RefCell::new(context)),
+        )
     }
 
-    /// Polls event
-    fn poll_event(&mut self) -> Option<Self::Eout> {
-        None
+    /// Transport is active now, which means it is connected.
+    fn transport_active(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) {
+        ctx.fire_transport_active();
+    }
+    /// Transport is inactive now, which means it is disconnected.
+    fn transport_inactive(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) {
+        ctx.fire_transport_inactive();
     }
 
-    /// Handles timeout
-    fn handle_timeout(&mut self, _now: Instant) -> Result<(), Self::Error> {
-        Ok(())
+    /// Handles input message.
+    fn handle_read(
+        &mut self,
+        ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>,
+        msg: Self::Rin,
+    );
+    /// Polls output message from internal transmit queue
+    fn poll_write(
+        &mut self,
+        ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>,
+    ) -> Option<Self::Wout>;
+
+    /// Handles a timeout event.
+    fn handle_timeout(
+        &mut self,
+        ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>,
+        now: Instant,
+    ) {
+        ctx.fire_handle_timeout(now);
+    }
+    /// Polls earliest timeout (eto) in its inbound operations.
+    fn poll_timeout(
+        &mut self,
+        ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>,
+        eto: &mut Instant,
+    ) {
+        ctx.fire_poll_timeout(eto);
     }
 
-    /// Polls timeout
-    fn poll_timeout(&mut self) -> Option<Instant> {
-        None
+    /// Reads an EOF event.
+    fn handle_eof(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) {
+        ctx.fire_handle_eof();
+    }
+    /// Handle an Error in one of its operations.
+    fn handle_error(
+        &mut self,
+        ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>,
+        err: Box<dyn Error>,
+    ) {
+        ctx.fire_handle_error(err);
+    }
+    /// Handle a close event.
+    fn handle_close(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) {
+        ctx.fire_handle_close();
     }
 }
 
-impl<H, Rin, Win, Ein> Handler<Rin, Win, Ein> for &mut H
-where
-    H: Handler<Rin, Win, Ein> + ?Sized,
+impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> HandlerInternal
+    for Box<dyn Handler<Rin = Rin, Rout = Rout, Win = Win, Wout = Wout>>
 {
-    type Rout = H::Rout;
-    type Wout = H::Wout;
-    type Eout = H::Eout;
-    type Error = H::Error;
-
-    fn handle_read(&mut self, msg: Rin) -> Result<(), H::Error> {
-        (**self).handle_read(msg)
+    fn transport_active_internal(&mut self, ctx: &dyn ContextInternal) {
+        if let Some(ctx) = ctx.as_any().downcast_ref::<Context<Rin, Rout, Win, Wout>>() {
+            self.transport_active(ctx);
+        } else {
+            panic!(
+                "ctx can't downcast_ref::<Context<Rin, Rout, Win, Wout>> in {} handler",
+                ctx.name()
+            );
+        }
+    }
+    fn transport_inactive_internal(&mut self, ctx: &dyn ContextInternal) {
+        if let Some(ctx) = ctx.as_any().downcast_ref::<Context<Rin, Rout, Win, Wout>>() {
+            self.transport_inactive(ctx);
+        } else {
+            panic!(
+                "ctx can't downcast_ref::<Context<Rin, Rout, Win, Wout>> in {} handler",
+                ctx.name()
+            );
+        }
     }
 
-    fn poll_read(&mut self) -> Option<H::Rout> {
-        (**self).poll_read()
+    fn handle_read_internal(&mut self, ctx: &dyn ContextInternal, msg: Box<dyn Any>) {
+        if let Some(ctx) = ctx.as_any().downcast_ref::<Context<Rin, Rout, Win, Wout>>() {
+            if let Ok(msg) = msg.downcast::<Rin>() {
+                self.handle_read(ctx, *msg);
+            } else {
+                panic!("msg can't downcast::<Rin> in {} handler", ctx.name());
+            }
+        } else {
+            panic!(
+                "ctx can't downcast::<Context<Rin, Rout, Win, Wout>> in {} handler",
+                ctx.name()
+            );
+        }
+    }
+    fn poll_write_internal(&mut self, ctx: &dyn ContextInternal) -> Option<Box<dyn Any>> {
+        if let Some(ctx) = ctx.as_any().downcast_ref::<Context<Rin, Rout, Win, Wout>>() {
+            if let Some(msg) = self.poll_write(ctx) {
+                Some(Box::new(msg))
+            } else {
+                None
+            }
+        } else {
+            panic!(
+                "ctx can't downcast_ref::<OutboundContext<Win, Wout>> in {} handler",
+                ctx.name()
+            );
+        }
     }
 
-    fn handle_write(&mut self, msg: Win) -> Result<(), H::Error> {
-        (**self).handle_write(msg)
+    fn handle_timeout_internal(&mut self, ctx: &dyn ContextInternal, now: Instant) {
+        if let Some(ctx) = ctx.as_any().downcast_ref::<Context<Rin, Rout, Win, Wout>>() {
+            self.handle_timeout(ctx, now);
+        } else {
+            panic!(
+                "ctx can't downcast_ref::<Context<Rin, Rout, Win, Wout>> in {} handler",
+                ctx.name()
+            );
+        }
+    }
+    fn poll_timeout_internal(&mut self, ctx: &dyn ContextInternal, eto: &mut Instant) {
+        if let Some(ctx) = ctx.as_any().downcast_ref::<Context<Rin, Rout, Win, Wout>>() {
+            self.poll_timeout(ctx, eto);
+        } else {
+            panic!(
+                "ctx can't downcast_ref::<Context<Rin, Rout, Win, Wout>> in {} handler",
+                ctx.name()
+            );
+        }
     }
 
-    fn poll_write(&mut self) -> Option<H::Wout> {
-        (**self).poll_write()
+    fn handle_eof_internal(&mut self, ctx: &dyn ContextInternal) {
+        if let Some(ctx) = ctx.as_any().downcast_ref::<Context<Rin, Rout, Win, Wout>>() {
+            self.handle_eof(ctx);
+        } else {
+            panic!(
+                "ctx can't downcast_ref::<Context<Rin, Rout, Win, Wout>> in {} handler",
+                ctx.name()
+            );
+        }
     }
-
-    fn handle_event(&mut self, evt: Ein) -> Result<(), H::Error> {
-        (**self).handle_event(evt)
+    fn handle_error_internal(&mut self, ctx: &dyn ContextInternal, err: Box<dyn Error>) {
+        if let Some(ctx) = ctx.as_any().downcast_ref::<Context<Rin, Rout, Win, Wout>>() {
+            self.handle_error(ctx, err);
+        } else {
+            panic!(
+                "ctx can't downcast_ref::<Context<Rin, Rout, Win, Wout>> in {} handler",
+                ctx.name()
+            );
+        }
     }
-
-    fn poll_event(&mut self) -> Option<H::Eout> {
-        (**self).poll_event()
-    }
-
-    fn handle_timeout(&mut self, now: Instant) -> Result<(), H::Error> {
-        (**self).handle_timeout(now)
-    }
-
-    fn poll_timeout(&mut self) -> Option<Instant> {
-        (**self).poll_timeout()
+    fn handle_close_internal(&mut self, ctx: &dyn ContextInternal) {
+        if let Some(ctx) = ctx.as_any().downcast_ref::<Context<Rin, Rout, Win, Wout>>() {
+            self.handle_close(ctx);
+        } else {
+            panic!(
+                "ctx can't downcast_ref::<OutboundContext<Win, Wout>> in {} handler",
+                ctx.name()
+            );
+        }
     }
 }
 
-impl<H, Rin, Win, Ein> Handler<Rin, Win, Ein> for Box<H>
-where
-    H: Handler<Rin, Win, Ein> + ?Sized,
+/// Enables a [Handler] to interact with its Pipeline and other handlers.
+pub struct Context<Rin, Rout, Win, Wout> {
+    name: String,
+
+    next_context: Option<Rc<RefCell<dyn ContextInternal>>>,
+    next_handler: Option<Rc<RefCell<dyn HandlerInternal>>>,
+
+    phantom: PhantomData<(Rin, Rout, Win, Wout)>,
+}
+
+impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout, Win, Wout> {
+    /// Creates a new Context
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+
+            next_context: None,
+            next_handler: None,
+
+            phantom: PhantomData,
+        }
+    }
+
+    /// Transport is active now, which means it is connected.
+    pub fn fire_transport_active(&self) {
+        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
+            let (mut next_handler, next_context) =
+                (next_handler.borrow_mut(), next_context.borrow());
+            next_handler.transport_active_internal(&*next_context);
+        }
+    }
+
+    /// Transport is inactive now, which means it is disconnected.
+    pub fn fire_transport_inactive(&self) {
+        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
+            let (mut next_handler, next_context) =
+                (next_handler.borrow_mut(), next_context.borrow());
+            next_handler.transport_inactive_internal(&*next_context);
+        }
+    }
+
+    /// Handle input message.
+    pub fn fire_handle_read(&self, msg: Rout) {
+        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
+            let (mut next_handler, next_context) =
+                (next_handler.borrow_mut(), next_context.borrow());
+            next_handler.handle_read_internal(&*next_context, Box::new(msg));
+        } else {
+            warn!("handle_read reached end of pipeline");
+        }
+    }
+
+    /// Polls output message.
+    pub fn fire_poll_write(&self) -> Option<Win> {
+        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
+            let (mut next_handler, next_context) =
+                (next_handler.borrow_mut(), next_context.borrow());
+            if let Some(msg) = next_handler.poll_write_internal(&*next_context) {
+                if let Ok(msg) = msg.downcast::<Win>() {
+                    Some(*msg)
+                } else {
+                    panic!(
+                        "msg can't downcast::<Win> in {} handler",
+                        next_context.name()
+                    );
+                }
+            } else {
+                None
+            }
+        } else {
+            warn!("poll_write reached end of pipeline");
+            None
+        }
+    }
+
+    /// Handles a timeout event.
+    pub fn fire_handle_timeout(&self, now: Instant) {
+        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
+            let (mut next_handler, next_context) =
+                (next_handler.borrow_mut(), next_context.borrow());
+            next_handler.handle_timeout_internal(&*next_context, now);
+        } else {
+            warn!("handle_timeout reached end of pipeline");
+        }
+    }
+
+    /// Polls earliest timeout (eto) in its inbound operations.
+    pub fn fire_poll_timeout(&self, eto: &mut Instant) {
+        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
+            let (mut next_handler, next_context) =
+                (next_handler.borrow_mut(), next_context.borrow());
+            next_handler.poll_timeout_internal(&*next_context, eto);
+        } else {
+            trace!("poll_timeout reached end of pipeline");
+        }
+    }
+
+    /// Reads an EOF event.
+    pub fn fire_handle_eof(&self) {
+        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
+            let (mut next_handler, next_context) =
+                (next_handler.borrow_mut(), next_context.borrow());
+            next_handler.handle_eof_internal(&*next_context);
+        } else {
+            warn!("handle_eof reached end of pipeline");
+        }
+    }
+
+    /// Reads an Error in one of its inbound operations.
+    pub fn fire_handle_error(&self, err: Box<dyn Error>) {
+        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
+            let (mut next_handler, next_context) =
+                (next_handler.borrow_mut(), next_context.borrow());
+            next_handler.handle_error_internal(&*next_context, err);
+        } else {
+            warn!("handle_error reached end of pipeline");
+        }
+    }
+
+    /// Writes a close event.
+    pub fn fire_handle_close(&self) {
+        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
+            let (mut next_handler, next_context) =
+                (next_handler.borrow_mut(), next_context.borrow());
+            next_handler.handle_close_internal(&*next_context);
+        } else {
+            warn!("handle_close reached end of pipeline");
+        }
+    }
+}
+
+impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> ContextInternal
+    for Context<Rin, Rout, Win, Wout>
 {
-    type Rout = H::Rout;
-    type Wout = H::Wout;
-    type Eout = H::Eout;
-    type Error = H::Error;
-
-    fn handle_read(&mut self, msg: Rin) -> Result<(), H::Error> {
-        (**self).handle_read(msg)
+    fn fire_transport_active_internal(&self) {
+        self.fire_transport_active();
+    }
+    fn fire_transport_inactive_internal(&self) {
+        self.fire_transport_inactive();
+    }
+    fn fire_handle_read_internal(&self, msg: Box<dyn Any>) {
+        if let Ok(msg) = msg.downcast::<Rout>() {
+            self.fire_handle_read(*msg);
+        } else {
+            panic!("msg can't downcast::<Rout> in {} handler", self.name());
+        }
+    }
+    fn fire_poll_write_internal(&self) -> Option<Box<dyn Any>> {
+        if let Some(msg) = self.fire_poll_write() {
+            Some(Box::new(msg))
+        } else {
+            None
+        }
     }
 
-    fn poll_read(&mut self) -> Option<H::Rout> {
-        (**self).poll_read()
+    fn fire_handle_timeout_internal(&self, now: Instant) {
+        self.fire_handle_timeout(now);
+    }
+    fn fire_poll_timeout_internal(&self, eto: &mut Instant) {
+        self.fire_poll_timeout(eto);
     }
 
-    fn handle_write(&mut self, msg: Win) -> Result<(), H::Error> {
-        (**self).handle_write(msg)
+    fn fire_handle_eof_internal(&self) {
+        self.fire_handle_eof();
+    }
+    fn fire_handle_error_internal(&self, err: Box<dyn Error>) {
+        self.fire_handle_error(err);
+    }
+    fn fire_handle_close_internal(&self) {
+        self.fire_handle_close();
     }
 
-    fn poll_write(&mut self) -> Option<H::Wout> {
-        (**self).poll_write()
+    fn name(&self) -> &str {
+        self.name.as_str()
     }
-
-    fn handle_event(&mut self, evt: Ein) -> Result<(), H::Error> {
-        (**self).handle_event(evt)
+    fn as_any(&self) -> &dyn Any {
+        self
     }
-
-    fn poll_event(&mut self) -> Option<H::Eout> {
-        (**self).poll_event()
+    fn set_next_context(&mut self, next_context: Option<Rc<RefCell<dyn ContextInternal>>>) {
+        self.next_context = next_context;
     }
-
-    fn handle_timeout(&mut self, now: Instant) -> Result<(), H::Error> {
-        (**self).handle_timeout(now)
-    }
-
-    fn poll_timeout(&mut self) -> Option<Instant> {
-        (**self).poll_timeout()
+    fn set_next_handler(&mut self, next_handler: Option<Rc<RefCell<dyn HandlerInternal>>>) {
+        self.next_handler = next_handler;
     }
 }

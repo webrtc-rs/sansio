@@ -12,3 +12,4 @@ keywords = ["sans-io"]
 categories = [ "network-programming" ]
 
 [dependencies]
+log = "0.4.28"

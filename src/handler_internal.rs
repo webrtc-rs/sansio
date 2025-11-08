@@ -15,8 +15,8 @@ pub trait HandlerInternal {
     fn handle_timeout_internal(&mut self, ctx: &dyn ContextInternal, now: Instant);
     fn poll_timeout_internal(&mut self, ctx: &dyn ContextInternal, eto: &mut Instant);
 
-    fn handle_read_eof_internal(&mut self, ctx: &dyn ContextInternal);
-    fn handle_exception_internal(&mut self, ctx: &dyn ContextInternal, err: Box<dyn Error>);
+    fn handle_eof_internal(&mut self, ctx: &dyn ContextInternal);
+    fn handle_error_internal(&mut self, ctx: &dyn ContextInternal, err: Box<dyn Error>);
     fn handle_close_internal(&mut self, ctx: &dyn ContextInternal);
 }
 
@@ -25,15 +25,15 @@ pub trait ContextInternal {
     fn fire_transport_active_internal(&self);
     fn fire_transport_inactive_internal(&self);
 
-    fn fire_read_internal(&self, msg: Box<dyn Any>);
+    fn fire_handle_read_internal(&self, msg: Box<dyn Any>);
     fn fire_poll_write_internal(&self) -> Option<Box<dyn Any>>;
 
-    fn fire_timeout_internal(&self, now: Instant);
+    fn fire_handle_timeout_internal(&self, now: Instant);
     fn fire_poll_timeout_internal(&self, eto: &mut Instant);
 
-    fn fire_read_eof_internal(&self);
-    fn fire_exception_internal(&self, err: Box<dyn Error>);
-    fn fire_close_internal(&self);
+    fn fire_handle_eof_internal(&self);
+    fn fire_handle_error_internal(&self, err: Box<dyn Error>);
+    fn fire_handle_close_internal(&self);
 
     fn name(&self) -> &str;
     fn as_any(&self) -> &dyn Any;

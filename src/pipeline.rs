@@ -1,6 +1,6 @@
 use std::{cell::RefCell, error::Error, rc::Rc, time::Instant};
 
-use crate::channel::{handler::Handler, pipeline_internal::PipelineInternal};
+use crate::{handler::Handler, pipeline_internal::PipelineInternal};
 
 /// InboundPipeline
 pub trait InboundPipeline<R> {
@@ -10,14 +10,11 @@ pub trait InboundPipeline<R> {
     /// Transport is inactive now, which means it is disconnected.
     fn transport_inactive(&self);
 
-    /// Reads a message.
-    fn read(&self, msg: R);
+    /// Handles an incoming message.
+    fn handle_read(&self, msg: R);
 
-    /// Reads an EOF event.
-    fn handle_read_eof(&self);
-
-    /// Reads an Error exception in one of its inbound operations.
-    fn handle_exception(&self, err: Box<dyn Error>);
+    /// Polls an outgoing message
+    fn poll_write(&self) -> Option<R>;
 
     /// Handles a timeout event.
     fn handle_timeout(&self, now: Instant);
@@ -25,8 +22,11 @@ pub trait InboundPipeline<R> {
     /// Polls an event.
     fn poll_timeout(&self, eto: &mut Instant);
 
-    /// Polls an outgoing message
-    fn poll_transmit(&self) -> Option<R>;
+    /// Handles an EOF event.
+    fn handle_eof(&self);
+
+    /// Handles an Error in one of its inbound operations.
+    fn handle_error(&self, err: Box<dyn Error>);
 }
 
 /// OutboundPipeline
@@ -148,22 +148,16 @@ impl<R: 'static, W: 'static> InboundPipeline<R> for Pipeline<R, W> {
         internal.transport_inactive();
     }
 
-    /// Reads a message.
-    fn read(&self, msg: R) {
+    /// Handles an incoming message.
+    fn handle_read(&self, msg: R) {
         let internal = self.internal.borrow();
         internal.handle_read(msg);
     }
 
-    /// Reads an EOF event.
-    fn handle_read_eof(&self) {
+    /// Polls an outgoing message
+    fn poll_write(&self) -> Option<R> {
         let internal = self.internal.borrow();
-        internal.handle_read_eof();
-    }
-
-    /// Reads an Error exception in one of its inbound operations.
-    fn handle_exception(&self, err: Box<dyn Error>) {
-        let internal = self.internal.borrow();
-        internal.handle_exception(err);
+        internal.poll_write()
     }
 
     /// Handles a timeout event.
@@ -178,10 +172,16 @@ impl<R: 'static, W: 'static> InboundPipeline<R> for Pipeline<R, W> {
         internal.poll_timeout(eto);
     }
 
-    /// Polls an outgoing message
-    fn poll_transmit(&self) -> Option<R> {
+    /// Handles an EOF event.
+    fn handle_eof(&self) {
         let internal = self.internal.borrow();
-        internal.poll_write()
+        internal.handle_eof();
+    }
+
+    /// Reads an Error in one of its inbound operations.
+    fn handle_error(&self, err: Box<dyn Error>) {
+        let internal = self.internal.borrow();
+        internal.handle_error(err);
     }
 }
 

@@ -1,13 +1,13 @@
 use std::collections::VecDeque;
 use std::{cell::RefCell, error::Error, io::ErrorKind, marker::PhantomData, rc::Rc, time::Instant};
 
-use crate::channel::{
+use crate::{
+    Context,
     handler::Handler,
     handler_internal::{ContextInternal, HandlerInternal},
-    Context,
 };
 
-const RESERVED_RETTY_PIPELINE_HANDLE_NAME: &str = "ReservedRettyPipelineHandlerName";
+const RESERVED_PIPELINE_HANDLE_NAME: &str = "ReservedPipelineHandlerName";
 
 pub(crate) struct PipelineInternal<R, W> {
     names: Vec<String>,
@@ -35,7 +35,7 @@ impl<R: 'static, W: 'static> PipelineInternal<R, W> {
 
     pub(crate) fn add_back(&mut self, handler: impl Handler + 'static) {
         let (name, handler, context) = handler.generate();
-        if name == RESERVED_RETTY_PIPELINE_HANDLE_NAME {
+        if name == RESERVED_PIPELINE_HANDLE_NAME {
             panic!("handle name {} is reserved", name);
         }
 
@@ -48,7 +48,7 @@ impl<R: 'static, W: 'static> PipelineInternal<R, W> {
 
     pub(crate) fn add_front(&mut self, handler: impl Handler + 'static) {
         let (name, handler, context) = handler.generate();
-        if name == RESERVED_RETTY_PIPELINE_HANDLE_NAME {
+        if name == RESERVED_PIPELINE_HANDLE_NAME {
             panic!("handle name {} is reserved", name);
         }
 
@@ -90,7 +90,7 @@ impl<R: 'static, W: 'static> PipelineInternal<R, W> {
     }
 
     pub(crate) fn remove(&mut self, handler_name: &str) -> Result<(), std::io::Error> {
-        if handler_name == RESERVED_RETTY_PIPELINE_HANDLE_NAME {
+        if handler_name == RESERVED_PIPELINE_HANDLE_NAME {
             return Err(std::io::Error::new(
                 ErrorKind::PermissionDenied,
                 format!("handle name {} is reserved", handler_name),
@@ -190,14 +190,6 @@ impl<R: 'static, W: 'static> PipelineInternal<R, W> {
         }
     }
 
-    pub(crate) fn handle_close(&self) {
-        let (mut handler, context) = (
-            self.handlers.first().unwrap().borrow_mut(),
-            self.contexts.first().unwrap().borrow(),
-        );
-        handler.handle_close_internal(&*context);
-    }
-
     pub(crate) fn handle_timeout(&self, now: Instant) {
         let (mut handler, context) = (
             self.handlers.first().unwrap().borrow_mut(),
@@ -214,20 +206,28 @@ impl<R: 'static, W: 'static> PipelineInternal<R, W> {
         handler.poll_timeout_internal(&*context, eto);
     }
 
-    pub(crate) fn handle_read_eof(&self) {
+    pub(crate) fn handle_eof(&self) {
         let (mut handler, context) = (
             self.handlers.first().unwrap().borrow_mut(),
             self.contexts.first().unwrap().borrow(),
         );
-        handler.handle_read_eof_internal(&*context);
+        handler.handle_eof_internal(&*context);
     }
 
-    pub(crate) fn handle_exception(&self, err: Box<dyn Error>) {
+    pub(crate) fn handle_error(&self, err: Box<dyn Error>) {
         let (mut handler, context) = (
             self.handlers.first().unwrap().borrow_mut(),
             self.contexts.first().unwrap().borrow(),
         );
-        handler.handle_exception_internal(&*context, err);
+        handler.handle_error_internal(&*context, err);
+    }
+
+    pub(crate) fn handle_close(&self) {
+        let (mut handler, context) = (
+            self.handlers.first().unwrap().borrow_mut(),
+            self.contexts.first().unwrap().borrow(),
+        );
+        handler.handle_close_internal(&*context);
     }
 }
 
@@ -248,7 +248,7 @@ impl<W: 'static> Handler for LastHandler<W> {
     type Wout = Self::Rin;
 
     fn name(&self) -> &str {
-        RESERVED_RETTY_PIPELINE_HANDLE_NAME
+        RESERVED_PIPELINE_HANDLE_NAME
     }
 
     fn handle_read(
@@ -256,7 +256,7 @@ impl<W: 'static> Handler for LastHandler<W> {
         ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>,
         msg: Self::Rin,
     ) {
-        ctx.fire_read(msg);
+        ctx.fire_handle_read(msg);
     }
 
     fn poll_write(
