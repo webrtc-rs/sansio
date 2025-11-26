@@ -1,0 +1,34 @@
+[package]
+name = "examples"
+version = "0.0.0"
+authors = ["Rain Liu <y@liu.mx>"]
+edition = "2024"
+description = "Examples for the sansio ecosystem"
+license = "MIT/Apache-2.0"
+repository = "https://github.com/sansio-org/sansio"
+publish = false
+
+[dependencies]
+# Sansio crates
+sansio = { path = "../sansio" }
+sansio-rt = { path = "../sansio-rt", default-features = false }
+
+# Other dependencies
+bytes = "1.5.0"
+chrono = "0.4.35"
+env_logger = "0.11.3"
+clap = { version = "4.5.2", features = ["derive"] }
+anyhow = "1.0.80"
+ctrlc = "3.4.2"
+crossbeam-channel = "0.5"
+wg = "0.7"
+log = "0.4.28"
+
+[features]
+default = ["runtime-smol"]
+runtime-smol = ["sansio-rt/runtime-smol"]
+runtime-tokio = ["sansio-rt/runtime-tokio"]
+
+[[example]]
+name = "chat_server_udp"
+path = "examples/chat_server_udp.rs"

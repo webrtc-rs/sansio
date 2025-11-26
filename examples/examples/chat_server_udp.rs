@@ -14,7 +14,7 @@ use std::{
 
 use sansio::{Context, Handler, InboundPipeline, OutboundPipeline, Pipeline};
 
-mod helpers;
+use examples::helpers;
 
 use helpers::{
     byte_to_message_decoder::{LineBasedFrameDecoder, TaggedByteToMessageCodec, TerminatorType},

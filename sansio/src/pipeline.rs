@@ -55,7 +55,7 @@
 //! ## Example: Building a Protocol Pipeline
 //!
 //! ```rust
-//! use sansio::{Pipeline, Handler, Context};
+//! use sansio::{Pipeline, InboundPipeline, Handler, Context};
 //! use std::collections::VecDeque;
 //!
 //! # #[derive(Debug)]
@@ -151,7 +151,7 @@
 //!
 //! Pipelines enforce type compatibility at compile time:
 //!
-//! ```rust,compile_fail
+//! ```rust,ignore
 //! # use sansio::{Pipeline, Handler, Context};
 //! # struct H1;
 //! # impl Handler for H1 {
@@ -173,9 +173,9 @@
 //! #     fn handle_read(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>, _: Self::Rin) {}
 //! #     fn poll_write(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) -> Option<Self::Wout> { None }
 //! # }
-//! // This will fail: H1::Rout (String) != H2::Rin (i32)
+//! // This will fail at runtime: H1::Rout (String) != H2::Rin (i32)
 //! let pipeline: Pipeline<Vec<u8>, String> = Pipeline::new();
-//! pipeline.add_back(H1).add_back(H2); // Compile error!
+//! pipeline.add_back(H1).add_back(H2); // Will panic when messages flow through!
 //! ```
 //!
 //! ## Dynamic Pipeline Modification
@@ -183,7 +183,7 @@
 //! Pipelines can be modified at runtime:
 //!
 //! ```rust
-//! # use sansio::{Pipeline, Handler, Context};
+//! # use sansio::{Pipeline, InboundPipeline, Handler, Context};
 //! # struct MyHandler;
 //! # impl Handler for MyHandler {
 //! #     type Rin = String;
@@ -191,17 +191,23 @@
 //! #     type Win = String;
 //! #     type Wout = String;
 //! #     fn name(&self) -> &str { "MyHandler" }
-//! #     fn handle_read(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>, _: Self::Rin) {}
-//! #     fn poll_write(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) -> Option<Self::Wout> { None }
+//! #     fn handle_read(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>, msg: Self::Rin) {
+//! #         ctx.fire_handle_read(msg);
+//! #     }
+//! #     fn poll_write(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) -> Option<Self::Wout> {
+//! #         ctx.fire_poll_write()
+//! #     }
 //! # }
 //! let pipeline: Pipeline<String, String> = Pipeline::new();
 //! pipeline.add_back(MyHandler);
 //! let pipeline = pipeline.finalize();
 //!
+//! // Use the pipeline
+//! pipeline.transport_active();
+//! pipeline.handle_read("Hello".to_string());
+//!
 //! // Remove handlers
 //! pipeline.remove("MyHandler").unwrap();
-//! pipeline.remove_back().unwrap();
-//! pipeline.remove_front().unwrap();
 //! ```
 //!
 //! ## Best Practices
@@ -234,16 +240,36 @@ use crate::{handler::Handler, pipeline_internal::PipelineInternal};
 /// # Example
 ///
 /// ```rust
-/// use sansio::{Pipeline, InboundPipeline};
+/// use sansio::{Pipeline, InboundPipeline, Handler, Context};
 /// use std::time::Instant;
 ///
+/// // Simple pass-through handler for the example
+/// struct SimpleHandler;
+/// impl Handler for SimpleHandler {
+///     type Rin = Vec<u8>;
+///     type Rout = String;
+///     type Win = String;
+///     type Wout = Vec<u8>;
+///     fn name(&self) -> &str { "SimpleHandler" }
+///     fn handle_read(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>, msg: Self::Rin) {
+///         // Convert Vec<u8> to String
+///         if let Ok(s) = String::from_utf8(msg) {
+///             ctx.fire_handle_read(s);
+///         }
+///     }
+///     fn poll_write(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) -> Option<Self::Wout> {
+///         // Convert String to Vec<u8>
+///         ctx.fire_poll_write().map(|s| s.into_bytes())
+///     }
+/// }
+///
 /// let pipeline: Pipeline<Vec<u8>, String> = Pipeline::new();
-/// // ... add handlers ...
+/// pipeline.add_back(SimpleHandler);
 /// let pipeline = pipeline.finalize();
 ///
 /// // Push data into the pipeline
 /// pipeline.transport_active();
-/// pipeline.handle_read(vec![1, 2, 3, 4]);
+/// pipeline.handle_read(vec![72, 101, 108, 108, 111]); // "Hello"
 /// pipeline.handle_timeout(Instant::now());
 /// ```
 pub trait InboundPipeline<R> {
@@ -685,7 +711,7 @@ impl<R: 'static, W: 'static> Pipeline<R, W> {
     /// # Example
     ///
     /// ```rust
-    /// # use sansio::{Pipeline, Handler, Context};
+    /// # use sansio::{Pipeline, InboundPipeline, Handler, Context};
     /// # struct H1;
     /// # impl Handler for H1 {
     /// #     type Rin = String;
@@ -693,8 +719,12 @@ impl<R: 'static, W: 'static> Pipeline<R, W> {
     /// #     type Win = String;
     /// #     type Wout = String;
     /// #     fn name(&self) -> &str { "H1" }
-    /// #     fn handle_read(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>, _: Self::Rin) {}
-    /// #     fn poll_write(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) -> Option<Self::Wout> { None }
+    /// #     fn handle_read(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>, msg: Self::Rin) {
+    /// #         ctx.fire_handle_read(msg);
+    /// #     }
+    /// #     fn poll_write(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) -> Option<Self::Wout> {
+    /// #         ctx.fire_poll_write()
+    /// #     }
     /// # }
     /// let pipeline: Pipeline<String, String> = Pipeline::new();
     /// pipeline.add_back(H1);

@@ -2,14 +2,14 @@
 //!
 //! This module provides a local executor implementation using tokio's `LocalSet`.
 
-use core_affinity::{set_for_current, CoreId};
+use core_affinity::{CoreId, set_for_current};
 use scoped_tls::scoped_thread_local;
-use tokio::task::{JoinHandle as TokioJoinHandle, LocalSet};
 use std::{
     future::Future,
     io::Result,
     thread::{self, JoinHandle},
 };
+use tokio::task::{JoinHandle as TokioJoinHandle, LocalSet};
 
 scoped_thread_local!(pub(super) static LOCAL_SET: LocalSet);
 
@@ -50,9 +50,7 @@ impl LocalExecutorBuilder {
             .expect("Failed to build tokio runtime");
 
         let local_set = LocalSet::new();
-        LOCAL_SET.set(&local_set, || {
-            rt.block_on(local_set.run_until(f))
-        })
+        LOCAL_SET.set(&local_set, || rt.block_on(local_set.run_until(f)))
     }
 
     /// Spawns a thread to run the local executor until the given future completes.
@@ -75,9 +73,7 @@ impl LocalExecutorBuilder {
                 .expect("Failed to build tokio runtime");
 
             let local_set = LocalSet::new();
-            LOCAL_SET.set(&local_set, || {
-                rt.block_on(local_set.run_until(fut_gen()))
-            })
+            LOCAL_SET.set(&local_set, || rt.block_on(local_set.run_until(fut_gen())))
         })
     }
 }
@@ -86,9 +82,7 @@ impl LocalExecutorBuilder {
 ///
 /// If called from a tokio [`LocalSet`], the task is spawned on it.
 /// Otherwise, this method panics.
-pub fn spawn_local<T: 'static>(
-    future: impl Future<Output = T> + 'static,
-) -> TokioJoinHandle<T> {
+pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> TokioJoinHandle<T> {
     if LOCAL_SET.is_set() {
         LOCAL_SET.with(|local_set| local_set.spawn_local(future))
     } else {

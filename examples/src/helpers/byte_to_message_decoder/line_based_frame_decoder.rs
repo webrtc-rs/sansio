@@ -1,7 +1,6 @@
 use super::MessageDecoder;
 
 use bytes::BytesMut;
-use std::io::ErrorKind;
 
 /// Delimiter with different terminator type \n` or `\r\n`
 #[derive(Default, PartialEq, Eq)]
@@ -67,10 +66,10 @@ impl MessageDecoder for LineBasedFrameDecoder {
                 offset += eol;
                 let delim_length = if buf[offset] == b'\r' { 2 } else { 1 };
                 if eol > self.max_length {
-                    return Err(std::io::Error::new(
-                        ErrorKind::Other,
-                        format!("frame length {} exceeds max {}", eol, self.max_length),
-                    ));
+                    return Err(std::io::Error::other(format!(
+                        "frame length {} exceeds max {}",
+                        eol, self.max_length
+                    )));
                 }
 
                 let frame = if self.strip_delimiter {
@@ -88,10 +87,7 @@ impl MessageDecoder for LineBasedFrameDecoder {
                     self.discarded_bytes = len;
                     let _ = buf.split_to(len);
                     self.discarding = true;
-                    Err(std::io::Error::new(
-                        ErrorKind::Other,
-                        format!("over {}", len),
-                    ))
+                    Err(std::io::Error::other(format!("over {}", len)))
                 } else {
                     Ok(None)
                 }

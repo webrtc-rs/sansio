@@ -37,27 +37,6 @@
 //! It's fully decoupled from I/O, timers, and other runtime dependencies, making protocols easy to
 //! test and reuse across different runtime environments.
 //!
-//! ## Feature Flags
-//!
-//! ### Runtime Support
-//!
-//! Choose your async runtime via feature flags:
-//!
-//! - `runtime-smol` (default): Lightweight, minimal dependencies
-//! - `runtime-tokio`: Full tokio ecosystem integration
-//!
-//! **Note:** Only one runtime can be enabled at a time.
-//!
-//! ```toml
-//! # Default (smol)
-//! [dependencies]
-//! sansio = "0.0.5"
-//!
-//! # Using tokio
-//! [dependencies]
-//! sansio = { version = "0.0.5", default-features = false, features = ["runtime-tokio"] }
-//! ```
-//!
 //! ## Event Flow
 //!
 //! Messages flow through the pipeline in two directions:
@@ -219,29 +198,6 @@
 //! }
 //! ```
 //!
-//! ## Local Executor
-//!
-//! The `local_executor` module provides an optional async runtime abstraction:
-//!
-//! ```rust,no_run
-//! # #[cfg(feature = "runtime-smol")]
-//! use sansio::LocalExecutorBuilder;
-//!
-//! # #[cfg(feature = "runtime-smol")]
-//! LocalExecutorBuilder::default()
-//!     .run(async {
-//!         // Your async code here
-//!     });
-//! ```
-//!
-//! See the [`local_executor`] module documentation for more details and runtime-specific APIs.
-//!
-//! ## Additional Resources
-//!
-//! - [GitHub Repository](https://github.com/sansio-org/sansio)
-//! - [Examples](https://github.com/sansio-org/sansio/tree/master/examples)
-//! - [Local Executor Documentation](doc/LocalExecutor.md)
-//!
 //! ## Design Philosophy
 //!
 //! `sansio` follows the Sans-IO pattern, which separates protocol logic from I/O concerns:
@@ -286,13 +242,6 @@ pub(crate) mod pipeline_internal;
 /// Protocol trait for building Sans-IO protocols
 pub(crate) mod protocol;
 
-/// Local executor abstraction for async runtimes
-///
-/// Available when either `runtime-smol` or `runtime-tokio` feature is enabled.
-/// See [module documentation](local_executor/index.html) for runtime-specific APIs.
-#[cfg(any(feature = "runtime-smol", feature = "runtime-tokio"))]
-pub mod local_executor;
-
 // ========================================
 // Public Exports
 // ========================================
@@ -305,12 +254,3 @@ pub use pipeline::{InboundPipeline, OutboundPipeline, Pipeline};
 
 /// Protocol trait for Sans-IO protocol implementations
 pub use protocol::Protocol;
-
-/// Local executor utilities (runtime-dependent)
-///
-/// Available functions:
-/// - [`spawn_local()`](local_executor::spawn_local): Spawn a task on the local executor
-/// - [`yield_local()`](local_executor::yield_local): Yield to other tasks (note: async in tokio, sync in smol)
-/// - [`LocalExecutorBuilder`]: Builder for configuring the executor
-#[cfg(any(feature = "runtime-smol", feature = "runtime-tokio"))]
-pub use local_executor::{spawn_local, yield_local, LocalExecutorBuilder};

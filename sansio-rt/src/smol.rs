@@ -2,7 +2,7 @@
 //!
 //! This module provides a local executor implementation using smol's `LocalExecutor`.
 
-use core_affinity::{set_for_current, CoreId};
+use core_affinity::{CoreId, set_for_current};
 use scoped_tls::scoped_thread_local;
 use smol::{LocalExecutor, Task};
 use std::{
@@ -45,7 +45,9 @@ impl LocalExecutorBuilder {
         }
 
         let local_ex = LocalExecutor::new();
-        LOCAL_EX.set(&local_ex, || futures_lite::future::block_on(local_ex.run(f)))
+        LOCAL_EX.set(&local_ex, || {
+            futures_lite::future::block_on(local_ex.run(f))
+        })
     }
 
     /// Spawns a thread to run the local executor until the given future completes.
@@ -63,7 +65,9 @@ impl LocalExecutorBuilder {
             }
 
             let local_ex = LocalExecutor::new();
-            LOCAL_EX.set(&local_ex, || futures_lite::future::block_on(local_ex.run(fut_gen())))
+            LOCAL_EX.set(&local_ex, || {
+                futures_lite::future::block_on(local_ex.run(fut_gen()))
+            })
         })
     }
 }
@@ -72,9 +76,7 @@ impl LocalExecutorBuilder {
 ///
 /// If called from a smol [`LocalExecutor`], the task is spawned on it.
 /// Otherwise, this method panics.
-pub fn spawn_local<T: 'static>(
-    future: impl Future<Output = T> + 'static,
-) -> Task<T> {
+pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> Task<T> {
     if LOCAL_EX.is_set() {
         LOCAL_EX.with(|local_ex| local_ex.spawn(future))
     } else {
