@@ -14,15 +14,15 @@ sansio = { path = "../sansio" }
 sansio-rt = { path = "../sansio-rt", default-features = false }
 
 # Other dependencies
-bytes = "1.5.0"
-chrono = "0.4.35"
-env_logger = "0.11.3"
-clap = { version = "4.5.2", features = ["derive"] }
-anyhow = "1.0.80"
-ctrlc = "3.4.2"
+bytes = "1"
+chrono = "0.4"
+env_logger = "0.11"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+ctrlc = "3"
 crossbeam-channel = "0.5"
 wg = "0.7"
-log = "0.4.28"
+log = "0.4"
 
 [features]
 default = ["runtime-smol"]

@@ -1,6 +1,6 @@
 [package]
 name = "sansio-rt"
-version = "0.0.5"
+version = "0.0.6"
 authors = ["Rain Liu <y@liu.mx>"]
 edition = "2024"
 description = "Runtime abstraction for sansio - supports smol and tokio"
@@ -12,12 +12,12 @@ keywords = ["sansio", "runtime", "executor", "async"]
 categories = ["asynchronous", "network-programming"]
 
 [dependencies]
-scoped-tls = "1.0.1"
-core_affinity = "0.8.3"
+scoped-tls = "1"
+core_affinity = "0.8"
 
 # Runtime: smol (default)
-smol = { version = "2.0.2", optional = true }
-futures-lite = { version = "2.6.1", optional = true }
+smol = { version = "2", optional = true }
+futures-lite = { version = "2", optional = true }
 
 # Runtime: tokio (optional)
 tokio = { version = "1", features = ["rt", "sync", "macros"], optional = true }
