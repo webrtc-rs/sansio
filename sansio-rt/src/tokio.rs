@@ -7,11 +7,114 @@ use scoped_tls::scoped_thread_local;
 use std::{
     future::Future,
     io::Result,
+    pin::Pin,
+    task::{Context, Poll},
     thread::{self, JoinHandle},
 };
-use tokio::task::{JoinHandle as TokioJoinHandle, LocalSet};
+use tokio::task::LocalSet;
 
-scoped_thread_local!(pub(super) static LOCAL_SET: LocalSet);
+scoped_thread_local!(pub(super) static LOCAL: LocalSet);
+
+/// A handle to a spawned task.
+///
+/// This is a wrapper around tokio's `JoinHandle` that provides a unified API across runtimes.
+///
+/// When awaited, returns `Result<T, TaskError>`:
+/// - `Ok(T)`: The task completed successfully
+/// - `Err(TaskError)`: The task panicked or was aborted/cancelled
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use sansio_rt::{LocalExecutorBuilder, spawn_local};
+///
+/// LocalExecutorBuilder::default().run(async {
+///     let task = spawn_local(async { 42 });
+///     let result = task.await.unwrap();
+///     assert_eq!(result, 42);
+/// });
+/// ```
+pub struct Task<T> {
+    inner: tokio::task::JoinHandle<T>,
+}
+
+impl<T> Future for Task<T> {
+    type Output = std::result::Result<T, TaskError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.inner)
+            .poll(cx)
+            .map(|result| result.map_err(|e| TaskError { inner: e }))
+    }
+}
+
+impl<T> Task<T> {
+    /// Detaches the task, allowing it to run in the background.
+    ///
+    /// This consumes the task handle and allows the task to continue running
+    /// without being awaited. The task will run to completion in the background.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use sansio_rt::{LocalExecutorBuilder, spawn_local};
+    ///
+    /// LocalExecutorBuilder::default().run(async {
+    ///     let task = spawn_local(async {
+    ///         println!("Running in background");
+    ///     });
+    ///
+    ///     // Detach the task - it continues running
+    ///     task.detach();
+    ///
+    ///     // We can't await it anymore, but it will complete
+    /// });
+    /// ```
+    pub fn detach(self) {
+        // In tokio, dropping the JoinHandle allows the task to continue running
+        drop(self.inner);
+    }
+
+    /// Cancels the task.
+    ///
+    /// This immediately aborts the task's execution.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use sansio_rt::{LocalExecutorBuilder, spawn_local};
+    ///
+    /// LocalExecutorBuilder::default().run(async {
+    ///     let task = spawn_local(async {
+    ///         println!("This will not print");
+    ///     });
+    ///
+    ///     // Cancel the task
+    ///     task.cancel();
+    /// });
+    /// ```
+    pub fn cancel(self) {
+        self.inner.abort();
+    }
+}
+
+/// Error returned when a spawned task fails.
+///
+/// This can occur when:
+/// - The task panics
+/// - The task is aborted/cancelled
+#[derive(Debug)]
+pub struct TaskError {
+    inner: tokio::task::JoinError,
+}
+
+impl std::fmt::Display for TaskError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.inner)
+    }
+}
+
+impl std::error::Error for TaskError {}
 
 /// A factory that can be used to configure and create a tokio [`LocalSet`].
 #[derive(Debug, Default)]
@@ -50,7 +153,7 @@ impl LocalExecutorBuilder {
             .expect("Failed to build tokio runtime");
 
         let local_set = LocalSet::new();
-        LOCAL_SET.set(&local_set, || rt.block_on(local_set.run_until(f)))
+        LOCAL.set(&local_set, || rt.block_on(local_set.run_until(f)))
     }
 
     /// Spawns a thread to run the local executor until the given future completes.
@@ -73,7 +176,7 @@ impl LocalExecutorBuilder {
                 .expect("Failed to build tokio runtime");
 
             let local_set = LocalSet::new();
-            LOCAL_SET.set(&local_set, || rt.block_on(local_set.run_until(fut_gen())))
+            LOCAL.set(&local_set, || rt.block_on(local_set.run_until(fut_gen())))
         })
     }
 }
@@ -82,25 +185,49 @@ impl LocalExecutorBuilder {
 ///
 /// If called from a tokio [`LocalSet`], the task is spawned on it.
 /// Otherwise, this method panics.
-pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> TokioJoinHandle<T> {
-    if LOCAL_SET.is_set() {
-        LOCAL_SET.with(|local_set| local_set.spawn_local(future))
+///
+/// Returns a [`Task<T>`] that implements `Future<Output = Result<T, TaskError>>`.
+/// The task can be awaited to retrieve its result.
+///
+/// # Panics
+///
+/// Panics if called outside of a `LocalSet` context.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use sansio_rt::{LocalExecutorBuilder, spawn_local};
+///
+/// LocalExecutorBuilder::default().run(async {
+///     let task1 = spawn_local(async { 1 + 1 });
+///     let task2 = spawn_local(async { 2 + 2 });
+///
+///     let result1 = task1.await.unwrap();
+///     let result2 = task2.await.unwrap();
+///
+///     println!("Results: {}, {}", result1, result2);
+/// });
+/// ```
+pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> Task<T> {
+    if LOCAL.is_set() {
+        LOCAL.with(|local_set| Task {
+            inner: local_set.spawn_local(future),
+        })
     } else {
         panic!("`spawn_local()` must be called from a tokio `LocalSet`")
     }
 }
 
-/// Yield to allow other tasks to run.
+/// Yields to allow other tasks in the same executor to run.
 ///
-/// **Note**: This is an async function in the tokio implementation, unlike smol's
-/// synchronous version. This is because tokio only supports async task yielding.
+/// This is an async function for API consistency across runtimes. Call it as `yield_local().await`.
 ///
 /// This function yields execution to allow other tasks in the same LocalSet to run.
-/// Call it as `yield_local().await` in async contexts.
 ///
 /// # Example
-/// ```rust,ignore
-/// use sansio::{LocalExecutorBuilder, spawn_local, yield_local};
+///
+/// ```rust,no_run
+/// use sansio_rt::{LocalExecutorBuilder, spawn_local, yield_local};
 ///
 /// LocalExecutorBuilder::default().run(async {
 ///     spawn_local(async {

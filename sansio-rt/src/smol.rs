@@ -4,14 +4,115 @@
 
 use core_affinity::{CoreId, set_for_current};
 use scoped_tls::scoped_thread_local;
-use smol::{LocalExecutor, Task};
+use smol::LocalExecutor;
 use std::{
     future::Future,
     io::Result,
+    pin::Pin,
+    task::{Context, Poll},
     thread::{self, JoinHandle},
 };
 
-scoped_thread_local!(pub(super) static LOCAL_EX: LocalExecutor<'_>);
+scoped_thread_local!(pub(super) static LOCAL: LocalExecutor<'_>);
+
+/// A handle to a spawned task.
+///
+/// This is a wrapper around smol's `Task` that provides a unified API across runtimes.
+///
+/// When awaited, returns `Result<T, TaskError>`:
+/// - `Ok(T)`: The task completed successfully
+/// - `Err(TaskError)`: Never occurs in smol (panics propagate to awaiter)
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use sansio_rt::{LocalExecutorBuilder, spawn_local};
+///
+/// LocalExecutorBuilder::default().run(async {
+///     let task = spawn_local(async { 42 });
+///     let result = task.await.unwrap();
+///     assert_eq!(result, 42);
+/// });
+/// ```
+pub struct Task<T> {
+    inner: smol::Task<T>,
+}
+
+impl<T> Future for Task<T> {
+    type Output = std::result::Result<T, TaskError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // Smol tasks don't fail (panics propagate), so we always return Ok
+        Pin::new(&mut self.inner).poll(cx).map(Ok)
+    }
+}
+
+impl<T> Task<T> {
+    /// Detaches the task, allowing it to run in the background.
+    ///
+    /// This consumes the task handle and allows the task to continue running
+    /// without being awaited. The task will run to completion in the background.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use sansio_rt::{LocalExecutorBuilder, spawn_local};
+    ///
+    /// LocalExecutorBuilder::default().run(async {
+    ///     let task = spawn_local(async {
+    ///         println!("Running in background");
+    ///     });
+    ///
+    ///     // Detach the task - it continues running
+    ///     task.detach();
+    ///
+    ///     // We can't await it anymore, but it will complete
+    /// });
+    /// ```
+    pub fn detach(self) {
+        self.inner.detach();
+    }
+
+    /// Cancels the task.
+    ///
+    /// This is a best-effort cancellation. The task will be dropped, but
+    /// already-running code will continue until the next yield point.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use sansio_rt::{LocalExecutorBuilder, spawn_local};
+    ///
+    /// LocalExecutorBuilder::default().run(async {
+    ///     let task = spawn_local(async {
+    ///         println!("This may not print");
+    ///     });
+    ///
+    ///     // Cancel the task
+    ///     task.cancel();
+    /// });
+    /// ```
+    pub fn cancel(self) {
+        drop(self.inner);
+    }
+}
+
+/// Error returned when a spawned task fails.
+///
+/// In the smol runtime, tasks don't actually fail - panics propagate directly to the awaiter.
+/// This type exists only for API compatibility with the tokio runtime.
+#[derive(Debug)]
+pub struct TaskError {
+    _private: (),
+}
+
+impl std::fmt::Display for TaskError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "task failed")
+    }
+}
+
+impl std::error::Error for TaskError {}
 
 /// A factory that can be used to configure and create a [`LocalExecutor`].
 #[derive(Debug, Default)]
@@ -45,7 +146,7 @@ impl LocalExecutorBuilder {
         }
 
         let local_ex = LocalExecutor::new();
-        LOCAL_EX.set(&local_ex, || {
+        LOCAL.set(&local_ex, || {
             futures_lite::future::block_on(local_ex.run(f))
         })
     }
@@ -65,7 +166,7 @@ impl LocalExecutorBuilder {
             }
 
             let local_ex = LocalExecutor::new();
-            LOCAL_EX.set(&local_ex, || {
+            LOCAL.set(&local_ex, || {
                 futures_lite::future::block_on(local_ex.run(fut_gen()))
             })
         })
@@ -76,9 +177,34 @@ impl LocalExecutorBuilder {
 ///
 /// If called from a smol [`LocalExecutor`], the task is spawned on it.
 /// Otherwise, this method panics.
+///
+/// Returns a [`Task<T>`] that implements `Future<Output = Result<T, TaskError>>`.
+/// The task can be awaited to retrieve its result.
+///
+/// # Panics
+///
+/// Panics if called outside of a `LocalExecutor` context.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use sansio_rt::{LocalExecutorBuilder, spawn_local};
+///
+/// LocalExecutorBuilder::default().run(async {
+///     let task1 = spawn_local(async { 1 + 1 });
+///     let task2 = spawn_local(async { 2 + 2 });
+///
+///     let result1 = task1.await.unwrap();
+///     let result2 = task2.await.unwrap();
+///
+///     println!("Results: {}, {}", result1, result2);
+/// });
+/// ```
 pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> Task<T> {
-    if LOCAL_EX.is_set() {
-        LOCAL_EX.with(|local_ex| local_ex.spawn(future))
+    if LOCAL.is_set() {
+        LOCAL.with(|local_ex| Task {
+            inner: local_ex.spawn(future),
+        })
     } else {
         panic!("`spawn_local()` must be called from a `LocalExecutor`")
     }
@@ -90,9 +216,14 @@ pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> Tas
 ///
 /// Internally uses smol's `try_tick()` to synchronously run all pending tasks in the executor.
 ///
+/// # Panics
+///
+/// Panics if called outside of a `LocalExecutor` context.
+///
 /// # Example
+///
 /// ```rust,ignore
-/// use sansio::{LocalExecutorBuilder, spawn_local, yield_local};
+/// use sansio_rt::{LocalExecutorBuilder, spawn_local, yield_local};
 ///
 /// LocalExecutorBuilder::default().run(async {
 ///     spawn_local(async {
@@ -107,8 +238,8 @@ pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> Tas
 /// });
 /// ```
 pub async fn yield_local() {
-    if LOCAL_EX.is_set() {
-        LOCAL_EX.with(|local_ex| while local_ex.try_tick() {})
+    if LOCAL.is_set() {
+        LOCAL.with(|local_ex| while local_ex.try_tick() {})
     } else {
         panic!("`yield_local()` must be called from a smol `LocalExecutor`")
     }
