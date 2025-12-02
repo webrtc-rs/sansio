@@ -14,6 +14,7 @@ sansio = { path = "../sansio", version = "0.0.8" }
 sansio-bootstrap = { path = "../sansio-bootstrap", version = "0.0.8" }
 sansio-codec = { path = "../sansio-codec", version = "0.0.8" }
 sansio-executor = { path = "../sansio-executor", version = "0.0.8" }
+sansio-transport = { path = "../sansio-transport", version = "0.0.8" }
 
 # Other dependencies
 bytes = "1.11.0"

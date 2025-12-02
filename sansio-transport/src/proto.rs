@@ -1,11 +1,49 @@
-#![allow(dead_code)]
-
-//! Transport abstraction for TCP and UDP
-pub use async_transport::EcnCodepoint;
 use bytes::BytesMut;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Instant;
+
+/// Explicit congestion notification codepoint
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum EcnCodepoint {
+    #[doc(hidden)]
+    Ect0 = 0b10,
+    #[doc(hidden)]
+    Ect1 = 0b01,
+    #[doc(hidden)]
+    Ce = 0b11,
+}
+
+impl EcnCodepoint {
+    /// Create new object from the given bits
+    pub fn from_bits(x: u8) -> Option<Self> {
+        use self::EcnCodepoint::*;
+        Some(match x & 0b11 {
+            0b10 => Ect0,
+            0b01 => Ect1,
+            0b11 => Ce,
+            _ => {
+                return None;
+            }
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct Transmit {
+    /// The socket this datagram should be sent to
+    pub destination: SocketAddr,
+    /// Explicit congestion notification bits to set on the packet
+    pub ecn: Option<EcnCodepoint>,
+    /// Contents of the datagram
+    pub contents: Vec<u8>,
+    /// The segment size if this transmission contains multiple datagrams.
+    /// This is `None` if the transmit only contains a single datagram
+    pub segment_size: Option<usize>,
+    /// Optional source IP address for the datagram
+    pub src_ip: Option<IpAddr>,
+}
 
 /// Type of transport protocol, either UDP or TCP
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -42,7 +80,7 @@ impl Default for TransportContext {
 }
 
 /// A generic transmit with [TransportContext]
-pub struct Transmit<T> {
+pub struct TransportMessage<T> {
     /// Received/Sent time
     pub now: Instant,
     /// A transport context with [local_addr](TransportContext::local_addr) and [peer_addr](TransportContext::peer_addr)
@@ -52,10 +90,10 @@ pub struct Transmit<T> {
 }
 
 /// BytesMut type transmit with [TransportContext]
-pub type TaggedBytesMut = Transmit<BytesMut>;
+pub type TaggedBytesMut = TransportMessage<BytesMut>;
 
 /// String type transmit with [TransportContext]
-pub type TaggedString = Transmit<String>;
+pub type TaggedString = TransportMessage<String>;
 
 /// Four Tuple consists of local address and peer address
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]

@@ -1,7 +1,8 @@
 use super::*;
-use async_transport::{AsyncUdpSocket, BATCH_SIZE, Capabilities, RecvMeta, Transmit, UdpSocket};
 use log::error;
-use sansio_codec::TransportProtocol;
+use sansio_transport::{
+    AsyncUdpSocket, BATCH_SIZE, Capabilities, RecvMeta, Transmit, TransportProtocol, UdpSocket,
+};
 use std::mem::MaybeUninit;
 
 pub(crate) mod bootstrap_udp_client;

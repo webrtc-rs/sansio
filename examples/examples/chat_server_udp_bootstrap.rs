@@ -5,9 +5,10 @@ use sansio_bootstrap::BootstrapUdpServer;
 use sansio_codec::{
     byte_to_message_decoder::{LineBasedFrameDecoder, TaggedByteToMessageCodec, TerminatorType},
     string_codec::TaggedStringCodec,
-    transport::{TaggedBytesMut, TaggedString, TransportContext},
 };
 use sansio_executor::LocalExecutorBuilder;
+use sansio_transport::{TaggedBytesMut, TaggedString, TransportContext};
+
 use std::{
     cell::RefCell, collections::HashMap, io::Write, net::SocketAddr, rc::Rc, rc::Weak,
     str::FromStr, time::Instant,

@@ -22,8 +22,9 @@
 //! ```rust,no_run
 //! use sansio::Pipeline;
 //! use sansio_codec::{
-//!     LineBasedFrameDecoder, TaggedByteToMessageCodec, TaggedStringCodec, TerminatorType, TaggedBytesMut, TaggedString
+//!     LineBasedFrameDecoder, TaggedByteToMessageCodec, TaggedStringCodec, TerminatorType,
 //! };
+//! use sansio_transport::{TaggedBytesMut, TaggedString};
 //! use std::rc::Rc;
 //!
 //! let pipeline = Rc::new(Pipeline::<TaggedBytesMut, TaggedString>::new());
@@ -54,7 +55,7 @@
 //! The transport module provides tagged message types that carry metadata:
 //!
 //! ```rust
-//! use sansio_codec::{TransportContext, TaggedBytesMut, TransportProtocol};
+//! use sansio_transport::{TransportContext, TaggedBytesMut, TransportProtocol};
 //! use std::time::Instant;
 //! use bytes::BytesMut;
 //!
@@ -82,15 +83,8 @@ pub mod byte_to_message_decoder;
 /// UTF-8 string encoding/decoding handlers
 pub mod string_codec;
 
-/// Transport context and tagged message types
-pub mod transport;
-
 // Re-export commonly used types
 pub use byte_to_message_decoder::{
     LineBasedFrameDecoder, MessageDecoder, TaggedByteToMessageCodec, TerminatorType,
 };
 pub use string_codec::TaggedStringCodec;
-pub use transport::{
-    EcnCodepoint, FiveTuple, FourTuple, TaggedBytesMut, TaggedString, Transmit, TransportContext,
-    TransportProtocol,
-};

@@ -5,5 +5,6 @@ members = [
     "sansio-bootstrap",
     "sansio-codec",
     "sansio-executor",
+    "sansio-transport",
     "examples",
 ]

@@ -17,8 +17,8 @@ use tokio::{
 use wg::AsyncWaitGroup;
 
 use sansio::{InboundPipeline, OutboundPipeline, Pipeline};
-use sansio_codec::{TaggedBytesMut, TransportContext};
 use sansio_executor::spawn_local;
+use sansio_transport::{TaggedBytesMut, TransportContext};
 
 mod bootstrap_tcp;
 mod bootstrap_udp;

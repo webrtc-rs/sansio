@@ -3,8 +3,8 @@
 use bytes::{BufMut, BytesMut};
 use std::time::Instant;
 
-use crate::transport::{TaggedBytesMut, TaggedString};
 use sansio::{Context, Handler};
+use sansio_transport::{TaggedBytesMut, TaggedString};
 
 /// A tagged StringCodec handler that reads with input of TaggedBytesMut and output of TaggedString,
 /// or writes with input of TaggedString and output of TaggedBytesMut

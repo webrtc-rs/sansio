@@ -1,7 +1,7 @@
 //! Handlers for converting byte to message
-use crate::transport::TaggedBytesMut;
 use bytes::BytesMut;
 use sansio::{Context, Handler};
+use sansio_transport::TaggedBytesMut;
 use std::time::Instant;
 
 mod line_based_frame_decoder;

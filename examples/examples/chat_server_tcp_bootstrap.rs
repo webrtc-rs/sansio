@@ -10,9 +10,9 @@ use sansio_bootstrap::BootstrapTcpServer;
 use sansio_codec::{
     byte_to_message_decoder::{LineBasedFrameDecoder, TaggedByteToMessageCodec, TerminatorType},
     string_codec::TaggedStringCodec,
-    transport::{TaggedBytesMut, TaggedString, TransportContext},
 };
 use sansio_executor::LocalExecutorBuilder;
+use sansio_transport::{TaggedBytesMut, TaggedString, TransportContext};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct Shared {

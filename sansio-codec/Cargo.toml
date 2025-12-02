@@ -13,5 +13,5 @@ categories = ["asynchronous", "network-programming"]
 
 [dependencies]
 sansio = { path = "../sansio", version = "0.0.8" }
+sansio-transport = { path = "../sansio-transport", version = "0.0.8" }
 bytes = "1.11.0"
-async-transport = { version = "0.5.0", default-features = false, features = ["runtime-tokio"] }

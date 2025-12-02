@@ -1,6 +1,6 @@
 use super::*;
 use log::error;
-use sansio_codec::TransportProtocol;
+use sansio_transport::TransportProtocol;
 use tokio::net::{TcpListener, TcpStream};
 
 pub(crate) mod bootstrap_tcp_client;

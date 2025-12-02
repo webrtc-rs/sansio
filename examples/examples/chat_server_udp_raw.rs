@@ -16,7 +16,7 @@ use sansio::{Context, Handler, InboundPipeline, OutboundPipeline, Pipeline};
 use sansio_codec::{
     LineBasedFrameDecoder, TaggedByteToMessageCodec, TaggedStringCodec, TerminatorType,
 };
-use sansio_codec::{TaggedBytesMut, TaggedString, TransportContext, TransportProtocol};
+use sansio_transport::{TaggedBytesMut, TaggedString, TransportContext, TransportProtocol};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct Shared {
