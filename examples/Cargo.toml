@@ -29,12 +29,20 @@ log = "0.4.28"
 tokio = { version = "1.48.0", features = ["net", "time", "io-util", "sync", "macros"] }
 
 [[example]]
+name = "chat_client_udp"
+path = "examples/chat_client_udp.rs"
+
+[[example]]
 name = "chat_server_udp_raw"
 path = "examples/chat_server_udp_raw.rs"
 
 [[example]]
 name = "chat_server_udp_bootstrap"
 path = "examples/chat_server_udp_bootstrap.rs"
+
+[[example]]
+name = "chat_client_tcp"
+path = "examples/chat_client_tcp.rs"
 
 [[example]]
 name = "chat_server_tcp_raw"

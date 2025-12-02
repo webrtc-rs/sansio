@@ -1,8 +1,8 @@
 use super::*;
 use async_transport::{AsyncUdpSocket, BATCH_SIZE, Capabilities, RecvMeta, Transmit, UdpSocket};
+use log::error;
 use sansio_codec::TransportProtocol;
 use std::mem::MaybeUninit;
-use log::error;
 
 pub(crate) mod bootstrap_udp_client;
 pub(crate) mod bootstrap_udp_server;
@@ -147,52 +147,50 @@ impl<W: 'static> BootstrapUdp<W> {
             tokio::pin!(timer);
 
             tokio::select! {
-                    _ = close_rx.recv() => {
-                        trace!("pipeline socket exit loop");
-                        break;
-                    }
-                    _ = timer.as_mut() => {
-                        pipeline.handle_timeout(Instant::now());
-                    }
-                    res = socket.recv(&mut iovs, &mut metas) => {
-                        match res {
-                            Ok(n) => {
-                                if n == 0 {
-                                    pipeline.handle_eof();
-                                    break;
-                                }
-
-                                for (meta, buf) in metas.iter().zip(iovs.iter()).take(n) {
-                                    let message: BytesMut = buf[0..meta.len].into();
-                                    if !message.is_empty() {
-                                        trace!("socket read {} bytes", message.len());
-                                        pipeline
-                                            .handle_read(TaggedBytesMut {
-                                                now: Instant::now(),
-                                                transport: TransportContext {
-                                                    local_addr,
-                                                    peer_addr: meta.addr,
-                                                    ecn: meta.ecn,
-                                                    transport_protocol: TransportProtocol::UDP,
-                                                },
-                                                message,
-                                            });
-                                    }
-                                }
-                            }
-                            Err(err) => {
-                                warn!("socket read error {}", err);
+                _ = close_rx.recv() => {
+                    trace!("pipeline socket exit loop");
+                    break;
+                }
+                _ = timer.as_mut() => {
+                    pipeline.handle_timeout(Instant::now());
+                }
+                res = socket.recv(&mut iovs, &mut metas) => {
+                    match res {
+                        Ok(n) => {
+                            if n == 0 {
+                                pipeline.handle_eof();
                                 break;
                             }
+
+                            for (meta, buf) in metas.iter().zip(iovs.iter()).take(n) {
+                                let message: BytesMut = buf[0..meta.len].into();
+                                if !message.is_empty() {
+                                    trace!("socket read {} bytes", message.len());
+                                    pipeline
+                                        .handle_read(TaggedBytesMut {
+                                            now: Instant::now(),
+                                            transport: TransportContext {
+                                                local_addr,
+                                                peer_addr: meta.addr,
+                                                ecn: meta.ecn,
+                                                transport_protocol: TransportProtocol::UDP,
+                                            },
+                                            message,
+                                        });
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            warn!("socket read error {}", err);
+                            break;
                         }
                     }
                 }
+            }
         }
         pipeline.transport_inactive();
 
-        trace!(
-            "udp connection is gracefully down",
-        );
+        trace!("udp connection is gracefully down",);
 
         Ok(())
     }

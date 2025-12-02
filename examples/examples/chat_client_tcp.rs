@@ -1,33 +1,34 @@
 use clap::Parser;
 use futures::StreamExt;
-use std::{io::Write, net::SocketAddr, str::FromStr, time::Instant};
+use log::info;
+use std::{error::Error, io::Write, net::SocketAddr, str::FromStr, time::Instant};
 
-use retty::bootstrap::BootstrapUdpClient;
-use retty::channel::{Context, Handler, Pipeline};
-use retty::codec::{
+use sansio::{Context, Handler, Pipeline};
+use sansio_bootstrap::BootstrapTcpClient;
+use sansio_codec::{
     byte_to_message_decoder::{LineBasedFrameDecoder, TaggedByteToMessageCodec, TerminatorType},
     string_codec::TaggedStringCodec,
+    transport::{TaggedBytesMut, TaggedString, TransportContext, TransportProtocol},
 };
-use retty::executor::LocalExecutorBuilder;
-use retty::transport::{Protocol, TaggedBytesMut, TaggedString, TransportContext};
+use sansio_executor::LocalExecutorBuilder;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-struct EchoHandler;
+struct ChatHandler;
 
-impl EchoHandler {
+impl ChatHandler {
     fn new() -> Self {
-        EchoHandler {}
+        Self {}
     }
 }
 
-impl Handler for EchoHandler {
+impl Handler for ChatHandler {
     type Rin = TaggedString;
     type Rout = Self::Rin;
     type Win = TaggedString;
     type Wout = Self::Win;
 
     fn name(&self) -> &str {
-        "EchoHandler"
+        "ChatHandler"
     }
 
     fn handle_read(
@@ -40,6 +41,27 @@ impl Handler for EchoHandler {
             msg.message, msg.transport.peer_addr
         );
     }
+    fn handle_error(
+        &mut self,
+        ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>,
+        err: Box<dyn Error>,
+    ) {
+        println!("received error: {}", err);
+        ctx.fire_handle_close();
+    }
+    fn handle_eof(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) {
+        println!("EOF received :(");
+        ctx.fire_handle_close();
+    }
+
+    fn handle_timeout(
+        &mut self,
+        _ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>,
+        _now: Instant,
+    ) {
+        //last handler, no need to fire_handle_timeout
+    }
+
     fn poll_timeout(
         &mut self,
         _ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>,
@@ -57,14 +79,14 @@ impl Handler for EchoHandler {
 }
 
 #[derive(Parser)]
-#[command(name = "Echo Client UDP")]
+#[command(name = "Chat Client TCP")]
 #[command(author = "Rusty Rain <y@liu.mx>")]
 #[command(version = "0.1.0")]
-#[command(about = "An example of echo client udp", long_about = None)]
+#[command(about = "An example of chat client tcp", long_about = None)]
 struct Cli {
     #[arg(short, long)]
     debug: bool,
-    #[arg(long, default_value_t = format!("0.0.0.0"))]
+    #[arg(long, default_value_t = format!("127.0.0.1"))]
     host: String,
     #[arg(long, default_value_t = 8080)]
     port: u16,
@@ -94,17 +116,17 @@ fn main() -> anyhow::Result<()> {
             .init();
     }
 
-    println!("Connecting {}:{}...", host, port);
+    info!("Connecting {}:{}...", host, port);
 
     let transport = TransportContext {
         local_addr: SocketAddr::from_str("0.0.0.0:0")?,
         peer_addr: SocketAddr::from_str(&format!("{}:{}", host, port))?,
         ecn: None,
-        protocol: Protocol::UDP,
+        transport_protocol: TransportProtocol::TCP,
     };
 
     LocalExecutorBuilder::default().run(async move {
-        let mut bootstrap = BootstrapUdpClient::new();
+        let mut bootstrap = BootstrapTcpClient::new();
         bootstrap.pipeline(Box::new(move || {
             let pipeline: Pipeline<TaggedBytesMut, TaggedString> = Pipeline::new();
 
@@ -112,15 +134,13 @@ fn main() -> anyhow::Result<()> {
                 LineBasedFrameDecoder::new(8192, true, TerminatorType::BOTH),
             ));
             let string_codec_handler = TaggedStringCodec::new();
-            let echo_handler = EchoHandler::new();
+            let echo_handler = ChatHandler::new();
 
             pipeline.add_back(line_based_frame_decoder_handler);
             pipeline.add_back(string_codec_handler);
             pipeline.add_back(echo_handler);
             pipeline.finalize()
         }));
-
-        bootstrap.bind(transport.local_addr).await.unwrap();
 
         let pipeline = bootstrap.connect(transport.peer_addr).await.unwrap();
 
