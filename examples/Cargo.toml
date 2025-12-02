@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 # Sansio crates
 sansio = { path = "../sansio", version = "0.0.8" }
+sansio-codec = { path = "../sansio-codec", version = "0.0.8" }
 sansio-executor = { path = "../sansio-executor", version = "0.0.8" }
 
 # Other dependencies

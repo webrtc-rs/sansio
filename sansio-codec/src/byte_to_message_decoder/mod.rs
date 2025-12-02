@@ -1,5 +1,5 @@
 //! Handlers for converting byte to message
-use super::transport::TaggedBytesMut;
+use crate::transport::TaggedBytesMut;
 use bytes::BytesMut;
 use sansio::{Context, Handler};
 use std::time::Instant;

@@ -18,6 +18,3 @@
 
 #![warn(rust_2018_idioms)]
 #![allow(dead_code)]
-
-// Helper modules that examples can use
-pub mod helpers;

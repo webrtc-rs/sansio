@@ -18,13 +18,10 @@ use wg::AsyncWaitGroup;
 use sansio::{Context, Handler, InboundPipeline, OutboundPipeline, Pipeline};
 use sansio_executor::{LocalExecutorBuilder, spawn_local};
 
-use examples::helpers;
-
-use helpers::{
-    byte_to_message_decoder::{LineBasedFrameDecoder, TaggedByteToMessageCodec, TerminatorType},
-    string_codec::TaggedStringCodec,
-    transport::{Protocol, TaggedBytesMut, TaggedString, TransportContext},
+use sansio_codec::{
+    LineBasedFrameDecoder, TaggedByteToMessageCodec, TaggedStringCodec, TerminatorType,
 };
+use sansio_codec::{TaggedBytesMut, TaggedString, TransportContext, TransportProtocol};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct Shared {
@@ -69,7 +66,7 @@ impl Shared {
                             local_addr: msg.transport.local_addr,
                             peer_addr: *peer,
                             ecn: msg.transport.ecn,
-                            protocol: msg.transport.protocol,
+                            transport_protocol: msg.transport.transport_protocol,
                         },
                         message: msg.message.clone(),
                     });
@@ -264,7 +261,7 @@ async fn run_pipeline(
                                 transport: TransportContext {
                                     local_addr: stream.local_addr()?,
                                     peer_addr: stream.peer_addr()?,
-                                    protocol: Protocol::TCP,
+                                    transport_protocol: TransportProtocol::TCP,
                                     ecn: None,
                                 },
                                 message: BytesMut::from(&buf[..n]),

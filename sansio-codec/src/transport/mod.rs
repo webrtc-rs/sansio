@@ -33,9 +33,9 @@ impl EcnCodepoint {
     }
 }
 
-/// Type of protocol, either UDP or TCP
+/// Type of transport protocol, either UDP or TCP
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Protocol {
+pub enum TransportProtocol {
     /// UDP
     #[default]
     UDP,
@@ -50,8 +50,8 @@ pub struct TransportContext {
     pub local_addr: SocketAddr,
     /// Peer socket address, either IPv4 or IPv6
     pub peer_addr: SocketAddr,
-    /// Type of protocol, either UDP or TCP
-    pub protocol: Protocol,
+    /// Type of transport protocol, either UDP or TCP
+    pub transport_protocol: TransportProtocol,
     /// Explicit congestion notification bits to set on the packet
     pub ecn: Option<EcnCodepoint>,
 }
@@ -61,7 +61,7 @@ impl Default for TransportContext {
         Self {
             local_addr: SocketAddr::from_str("0.0.0.0:0").unwrap(),
             peer_addr: SocketAddr::from_str("0.0.0.0:0").unwrap(),
-            protocol: Protocol::UDP,
+            transport_protocol: TransportProtocol::UDP,
             ecn: None,
         }
     }
@@ -118,7 +118,7 @@ pub struct FiveTuple {
     /// Peer socket address, either IPv4 or IPv6
     pub peer_addr: SocketAddr,
     /// Type of protocol, either UDP or TCP
-    pub protocol: Protocol,
+    pub transport_protocol: TransportProtocol,
 }
 
 impl From<&TransportContext> for FiveTuple {
@@ -126,7 +126,7 @@ impl From<&TransportContext> for FiveTuple {
         Self {
             local_addr: value.local_addr,
             peer_addr: value.peer_addr,
-            protocol: value.protocol,
+            transport_protocol: value.transport_protocol,
         }
     }
 }
@@ -136,7 +136,7 @@ impl From<TransportContext> for FiveTuple {
         Self {
             local_addr: value.local_addr,
             peer_addr: value.peer_addr,
-            protocol: value.protocol,
+            transport_protocol: value.transport_protocol,
         }
     }
 }

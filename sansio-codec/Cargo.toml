@@ -1,0 +1,16 @@
+[package]
+name = "sansio-codec"
+version = "0.0.8"
+authors = ["Rain Liu <y@liu.mx>"]
+edition = "2024"
+description = "Protocol codecs for sansio: frame decoders, string codecs, and transport abstractions"
+license = "MIT/Apache-2.0"
+documentation = "https://docs.rs/sansio-codec"
+homepage = "https://sansio.org"
+repository = "https://github.com/sansio-org/sansio"
+keywords = ["sansio", "codec"]
+categories = ["asynchronous", "network-programming"]
+
+[dependencies]
+sansio = { path = "../sansio", version = "0.0.8" }
+bytes = "1.11.0"

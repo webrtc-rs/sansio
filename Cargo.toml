@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "sansio",
+    "sansio-codec",
     "sansio-executor",
     "examples",
 ]

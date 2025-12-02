@@ -13,14 +13,10 @@ use std::{
 };
 
 use sansio::{Context, Handler, InboundPipeline, OutboundPipeline, Pipeline};
-
-use examples::helpers;
-
-use helpers::{
-    byte_to_message_decoder::{LineBasedFrameDecoder, TaggedByteToMessageCodec, TerminatorType},
-    string_codec::TaggedStringCodec,
-    transport::{Protocol, TaggedBytesMut, TaggedString, TransportContext},
+use sansio_codec::{
+    LineBasedFrameDecoder, TaggedByteToMessageCodec, TaggedStringCodec, TerminatorType,
 };
+use sansio_codec::{TaggedBytesMut, TaggedString, TransportContext, TransportProtocol};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct Shared {
@@ -65,7 +61,7 @@ impl Shared {
                             local_addr: msg.transport.local_addr,
                             peer_addr: *peer,
                             ecn: msg.transport.ecn,
-                            protocol: msg.transport.protocol,
+                            transport_protocol: msg.transport.transport_protocol,
                         },
                         message: msg.message.clone(),
                     });
@@ -212,7 +208,7 @@ fn read_socket_input(socket: &UdpSocket, buf: &mut [u8]) -> Option<TaggedBytesMu
             transport: TransportContext {
                 local_addr: socket.local_addr().unwrap(),
                 peer_addr,
-                protocol: Protocol::UDP,
+                transport_protocol: TransportProtocol::UDP,
                 ecn: None,
             },
             message: BytesMut::from(&buf[..n]),
