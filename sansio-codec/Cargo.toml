@@ -1,6 +1,6 @@
 [package]
 name = "sansio-codec"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Rain Liu <y@liu.mx>"]
 edition = "2024"
 description = "Protocol codecs for sansio: frame decoders, string codecs, and transport abstractions"
@@ -12,6 +12,6 @@ keywords = ["sansio", "codec"]
 categories = ["asynchronous", "network-programming"]
 
 [dependencies]
-sansio = { path = "../sansio", version = "0.2.0" }
-sansio-transport = { path = "../sansio-transport", version = "0.2.0" }
+sansio = { path = "../sansio", version = "0.3.0" }
+sansio-transport = { path = "../sansio-transport", version = "0.3.0" }
 bytes = "1.11.0"

@@ -1,6 +1,6 @@
 [package]
 name = "sansio-executor"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Rain Liu <y@liu.mx>"]
 edition = "2024"
 description = "sansio executor"

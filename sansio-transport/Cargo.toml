@@ -1,6 +1,6 @@
 [package]
 name = "sansio-transport"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Rusty Rain <y@liu.mx>"]
 edition = "2024"
 description = "Asynchronous transports with ECN information"

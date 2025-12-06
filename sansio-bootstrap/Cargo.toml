@@ -1,6 +1,6 @@
 [package]
 name = "sansio-bootstrap"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Rain Liu <y@liu.mx>"]
 edition = "2024"
 description = "sansio bootstrap for TCP and UDP"
@@ -12,9 +12,9 @@ keywords = ["sansio", "bootstrap"]
 categories = ["asynchronous", "network-programming"]
 
 [dependencies]
-sansio = { path = "../sansio", version = "0.2.0" }
-sansio-executor = { path = "../sansio-executor", version = "0.2.0" }
-sansio-transport = { path = "../sansio-transport", version = "0.2.0" }
+sansio = { path = "../sansio", version = "0.3.0" }
+sansio-executor = { path = "../sansio-executor", version = "0.3.0" }
+sansio-transport = { path = "../sansio-transport", version = "0.3.0" }
 
 bytes = "1.11.0"
 wg = { version = "0.9.2", features = ["future"] }

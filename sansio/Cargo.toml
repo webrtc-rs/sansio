@@ -1,6 +1,6 @@
 [package]
 name = "sansio"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Rain Liu <y@liu.mx>"]
 edition = "2024"
 description = "sansio — an IO-free Rust networking framework that makes it easy to build protocols, application clients/servers."
