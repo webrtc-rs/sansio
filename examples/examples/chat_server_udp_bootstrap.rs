@@ -190,7 +190,7 @@ fn main() -> anyhow::Result<()> {
         let state = Rc::new(RefCell::new(Shared::new()));
 
         let mut bootstrap = BootstrapUdpServer::new();
-        bootstrap.pipeline(Box::new(move || {
+        bootstrap.pipeline(Box::new(move |_local_addr, _peer_addr| {
             let pipeline: Rc<Pipeline<TaggedBytesMut, TaggedString>> = Rc::new(Pipeline::new());
 
             let line_based_frame_decoder_handler = TaggedByteToMessageCodec::new(Box::new(

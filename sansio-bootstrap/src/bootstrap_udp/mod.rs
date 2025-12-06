@@ -48,12 +48,12 @@ impl<W: 'static> BootstrapUdp<W> {
 
     async fn connect(
         &mut self,
-        _peer_addr: Option<SocketAddr>,
+        peer_addr: Option<SocketAddr>,
     ) -> Result<Rc<dyn OutboundPipeline<W>>, Error> {
         let socket = self.socket.take().unwrap();
 
         let pipeline_factory_fn = Rc::clone(self.boostrap.pipeline_factory_fn.as_ref().unwrap());
-        let pipeline = (pipeline_factory_fn)();
+        let pipeline = (pipeline_factory_fn)(socket.local_addr()?, peer_addr);
         let pipeline_with_notify = PipelineWithNotify::new(Rc::clone(&pipeline));
         let pipeline_wr = pipeline;
 

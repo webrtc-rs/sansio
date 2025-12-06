@@ -127,7 +127,7 @@ fn main() -> anyhow::Result<()> {
 
     LocalExecutorBuilder::default().run(async move {
         let mut bootstrap = BootstrapTcpClient::new();
-        bootstrap.pipeline(Box::new(move || {
+        bootstrap.pipeline(Box::new(move |_local_addr, _peer_addr| {
             let pipeline: Pipeline<TaggedBytesMut, TaggedString> = Pipeline::new();
 
             let line_based_frame_decoder_handler = TaggedByteToMessageCodec::new(Box::new(

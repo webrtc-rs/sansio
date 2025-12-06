@@ -64,7 +64,8 @@ impl<R, W> PipelineWithNotify<R, W> {
 }
 
 /// Creates a new [Pipeline]
-pub type PipelineFactoryFn<R, W> = Box<dyn Fn() -> Rc<Pipeline<R, W>>>;
+pub type PipelineFactoryFn<R, W> =
+    Box<dyn Fn(SocketAddr, Option<SocketAddr>) -> Rc<Pipeline<R, W>>>;
 
 const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(86400); // 1 day duration
 

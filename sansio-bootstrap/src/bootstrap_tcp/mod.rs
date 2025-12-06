@@ -64,7 +64,7 @@ impl<W: 'static> BootstrapTcp<W> {
                                 trace!("tcp connection from {}", peer_addr);
                                 // A new task is spawned for each inbound socket. The socket is
                                 // moved to the new task and processed there.
-                                let pipeline = (pipeline_factory_fn)();
+                                let pipeline = (pipeline_factory_fn)(local_addr, Some(peer_addr));
                                 let pipeline_with_notify = PipelineWithNotify::new(pipeline);
                                 let child_close_rx = close_rx.resubscribe();
                                 let child_worker = worker.add(1);
@@ -114,7 +114,7 @@ impl<W: 'static> BootstrapTcp<W> {
 
         let wait_group = AsyncWaitGroup::new();
 
-        let pipeline = (pipeline_factory_fn)();
+        let pipeline = (pipeline_factory_fn)(socket.local_addr()?, socket.peer_addr().ok());
         let pipeline_with_notify = PipelineWithNotify::new(Rc::clone(&pipeline));
         let pipeline_wr = pipeline;
         let max_payload_size = self.boostrap.max_payload_size;
