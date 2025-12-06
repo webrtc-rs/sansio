@@ -186,7 +186,7 @@
 //! Use [`Protocol`](crate::Protocol) when you want a simple, self-contained protocol.
 
 use crate::handler_internal::{ContextInternal, HandlerInternal};
-use log::{trace, warn};
+use log::warn;
 use std::any::Any;
 use std::cell::RefCell;
 use std::marker::PhantomData;
@@ -890,7 +890,7 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
                 (next_handler.borrow_mut(), next_context.borrow());
             next_handler.poll_timeout_internal(&*next_context, eto);
         } else {
-            trace!("poll_timeout reached end of pipeline");
+            warn!("poll_timeout reached end of pipeline");
         }
     }
 
