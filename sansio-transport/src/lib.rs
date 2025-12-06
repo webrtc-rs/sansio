@@ -48,7 +48,7 @@ mod runtime;
 pub use imp::UdpSocketState;
 pub use proto::{
     EcnCodepoint, FiveTuple, FourTuple, TaggedBytesMut, TaggedString, Transmit, TransportContext,
-    TransportProtocol,
+    TransportMessage, TransportProtocol,
 };
 pub use runtime::AsyncUdpSocket;
 pub use runtime::UdpSocket;

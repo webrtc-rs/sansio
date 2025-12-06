@@ -239,9 +239,6 @@ pub(crate) mod pipeline;
 /// Internal pipeline types (not part of public API)
 pub(crate) mod pipeline_internal;
 
-/// Type-safe pipeline builder for compile-time type checking
-pub(crate) mod pipeline_builder;
-
 /// Protocol trait for building Sans-IO protocols
 pub(crate) mod protocol;
 
@@ -254,9 +251,6 @@ pub use handler::{Context, Handler};
 
 /// Pipeline traits for inbound and outbound message processing
 pub use pipeline::{InboundPipeline, OutboundPipeline, Pipeline};
-
-/// Type-safe pipeline builder for compile-time type checking
-pub use pipeline_builder::PipelineBuilder;
 
 /// Protocol trait for Sans-IO protocol implementations
 pub use protocol::Protocol;

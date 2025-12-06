@@ -3,14 +3,14 @@ use futures::StreamExt;
 use log::info;
 use std::{error::Error, io::Write, net::SocketAddr, str::FromStr, time::Instant};
 
-use sansio::{Context, Handler, PipelineBuilder};
+use sansio::{Context, Handler, Pipeline};
 use sansio_bootstrap::BootstrapTcpClient;
 use sansio_codec::{
     byte_to_message_decoder::{LineBasedFrameDecoder, TaggedByteToMessageCodec, TerminatorType},
     string_codec::TaggedStringCodec,
 };
 use sansio_executor::LocalExecutorBuilder;
-use sansio_transport::{TaggedString, TransportContext, TransportProtocol};
+use sansio_transport::{TaggedBytesMut, TaggedString, TransportContext, TransportProtocol};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct ChatHandler;
@@ -128,17 +128,18 @@ fn main() -> anyhow::Result<()> {
     LocalExecutorBuilder::default().run(async move {
         let mut bootstrap = BootstrapTcpClient::new();
         bootstrap.pipeline(Box::new(move || {
+            let pipeline: Pipeline<TaggedBytesMut, TaggedString> = Pipeline::new();
+
             let line_based_frame_decoder_handler = TaggedByteToMessageCodec::new(Box::new(
                 LineBasedFrameDecoder::new(8192, true, TerminatorType::BOTH),
             ));
             let string_codec_handler = TaggedStringCodec::new();
             let echo_handler = ChatHandler::new();
 
-            PipelineBuilder::new()
-                .add(line_based_frame_decoder_handler)
-                .add(string_codec_handler)
-                .add(echo_handler)
-                .build()
+            pipeline.add_back(line_based_frame_decoder_handler);
+            pipeline.add_back(string_codec_handler);
+            pipeline.add_back(echo_handler);
+            pipeline.finalize()
         }));
 
         let pipeline = bootstrap.connect(transport.peer_addr).await.unwrap();
