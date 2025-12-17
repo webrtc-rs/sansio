@@ -156,7 +156,7 @@
 //!
 //! **Important:** Handler order matters! They're processed in insertion order.
 //!
-//! ### Step 3: Run the Event Loop
+//! ### Step 3.1: Run the Event Loop with sync fn
 //!
 //! The pipeline is pure protocol logic - you provide the I/O:
 //! ```ignore
@@ -180,7 +180,9 @@
 //!         let mut eto = Instant::now() + Duration::from_millis(100);
 //!         pipeline.poll_timeout(&mut eto);
 //!
-//!         let delay_from_now = eto.checked_duration_since(Instant::now()).unwrap_or(Duration::from_secs(0));
+//!         let delay_from_now = eto
+//!             .checked_duration_since(Instant::now())
+//!             .unwrap_or(Duration::from_secs(0));
 //!         if delay_from_now.is_zero() {
 //!            pipeline.handle_timeout(Instant::now());
 //!            continue;
@@ -193,6 +195,48 @@
 //!
 //!         // Drive time forward
 //!         pipeline.handle_timeout(Instant::now());
+//!     }
+//!     pipeline.transport_inactive();
+//! }
+//! ```
+//! ### Step 3.2: Run the Event Loop with async fn
+//!
+//! The pipeline is pure protocol logic - you provide the I/O:
+//! ```ignore
+//! async fn run(socket: UdpSocket,
+//!              mut close_rx: broadcast::Receiver<()>,
+//!              mut write_notify: Notify) {
+//!     let mut buf = vec![0; 2000];
+//!
+//!     let pipeline = build_pipeline();
+//!     pipeline.transport_active();
+//!     loop {
+//!         // Poll pipeline to write transmit to socket
+//!         while let Some(transmit) = pipeline.poll_write() {
+//!             socket.send(transmit)?;
+//!         }
+//!
+//!         // Poll pipeline to get next timeout
+//!         let mut eto = Instant::now() + Duration::from_secs(86400);
+//!         pipeline.poll_timeout(&mut eto);
+//!
+//!         let delay_from_now = eto
+//!             .checked_duration_since(Instant::now())
+//!             .unwrap_or(Duration::from_secs(0));
+//!         if delay_from_now.is_zero() {
+//!            pipeline.handle_timeout(Instant::now());
+//!            continue;
+//!         }
+//!
+//!         let timer = tokio::time::sleep(delay_from_now);
+//!         tokio::pin!(timer);
+//!
+//!         tokio::select! {
+//!             _ = close_rx.recv() => break,
+//!             _ = write_notify.notified() => {},
+//!             _ = timer.as_mut() => pipeline.handle_timeout(Instant::now()),
+//!             n = socket.recv(&mut buf) => pipeline.handle_read(&buf[..n]),
+//!         }
 //!     }
 //!     pipeline.transport_inactive();
 //! }
@@ -217,7 +261,7 @@
 //! protocol logic becomes more complex.
 
 #![doc(
-    html_logo_url = "https://raw.githubusercontent.com/sansio-org/sansio/master/doc/sansio-white.png"
+    html_logo_url = "https://raw.githubusercontent.com/webrtc-rs/sansio/master/doc/sansio-white.png"
 )]
 #![warn(rust_2018_idioms)]
 #![allow(dead_code)]

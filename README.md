@@ -1,13 +1,13 @@
 <h1 align="center">
- <a href="https://sansio.org"><img src="https://raw.githubusercontent.com/sansio-org/sansio/master/doc/sansio-black.png" alt="sansio"></a>
+ <a href="https://webrtc.rs"><img src="https://raw.githubusercontent.com/webrtc-rs/sansio/master/doc/sansio-black.png" alt="sansio"></a>
  <br>
 </h1>
 <p align="center">
- <a href="https://github.com/sansio-org/sansio/actions">
-  <img src="https://github.com/sansio-org/sansio/workflows/cargo/badge.svg">
+ <a href="https://github.com/webrtc-rs/sansio/actions">
+  <img src="https://github.com/webrtc-rs/sansio/workflows/cargo/badge.svg">
  </a>
- <a href="https://deps.rs/repo/github/sansio-org/sansio">
-  <img src="https://deps.rs/repo/github/sansio-org/sansio/status.svg">
+ <a href="https://deps.rs/repo/github/webrtc-rs/sansio">
+  <img src="https://deps.rs/repo/github/webrtc-rs/sansio/status.svg">
  </a>
  <a href="https://crates.io/crates/sansio">
   <img src="https://img.shields.io/crates/v/sansio.svg">

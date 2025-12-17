@@ -1,13 +1,13 @@
 [package]
 name = "sansio-executor"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["Rain Liu <y@liu.mx>"]
 edition = "2024"
 description = "sansio executor"
 license = "MIT/Apache-2.0"
 documentation = "https://docs.rs/sansio-executor"
-homepage = "https://sansio.org"
-repository = "https://github.com/sansio-org/sansio"
+homepage = "https://webrtc.rs"
+repository = "https://github.com/webrtc-rs/sansio"
 keywords = ["sansio", "executor", "async", "tokio"]
 categories = ["asynchronous", "network-programming"]
 

@@ -71,7 +71,7 @@
 //! ```
 
 #![doc(
-    html_logo_url = "https://raw.githubusercontent.com/sansio-org/sansio/master/doc/sansio-white.png"
+    html_logo_url = "https://raw.githubusercontent.com/webrtc-rs/sansio/master/doc/sansio-white.png"
 )]
 #![warn(rust_2018_idioms)]
 #![warn(missing_docs)]

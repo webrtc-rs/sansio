@@ -5,16 +5,16 @@ authors = ["Rain Liu <y@liu.mx>"]
 edition = "2024"
 description = "Examples for the sansio ecosystem"
 license = "MIT/Apache-2.0"
-repository = "https://github.com/sansio-org/sansio"
+repository = "https://github.com/webrtc-rs/sansio"
 publish = false
 
 [dependencies]
 # Sansio crates
-sansio = { path = "../sansio", version = "0.5.0" }
-sansio-bootstrap = { path = "../sansio-bootstrap", version = "0.5.0" }
-sansio-codec = { path = "../sansio-codec", version = "0.5.0" }
-sansio-executor = { path = "../sansio-executor", version = "0.5.0" }
-sansio-transport = { path = "../sansio-transport", version = "0.5.0" }
+sansio = { path = "../sansio", version = "0.5.1" }
+sansio-bootstrap = { path = "../sansio-bootstrap", version = "0.5.1" }
+sansio-codec = { path = "../sansio-codec", version = "0.5.1" }
+sansio-executor = { path = "../sansio-executor", version = "0.5.1" }
+sansio-transport = { path = "../sansio-transport", version = "0.5.1" }
 
 # Other dependencies
 bytes = "1.11.0"
