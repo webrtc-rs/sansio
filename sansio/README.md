@@ -14,18 +14,34 @@ Inspired by [Netty](https://netty.io) and [Wangle](https://github.com/facebook/w
 
 ## Core Concepts
 
-### Pipeline
+### Pipeline Variants
 
-The `Pipeline` is a chain of `Handler`s that process inbound and outbound data:
+Sansio provides three pipeline variants for different use cases:
+
+- **`Pipeline`**: Exclusive ownership (`&mut self`). Zero overhead, ideal for TCP where each connection owns its pipeline.
+- **`RcPipeline`**: Shared ownership with `Rc`. Methods take `&self`, perfect for UDP servers where one pipeline handles messages from multiple peers.
+- **`ArcPipeline`**: Thread-safe shared ownership with `Arc` and `Mutex`. Use for multi-threaded servers.
 
 ```rust
 use sansio::Pipeline;
 
-let pipeline = Pipeline::new();
+let mut pipeline = Pipeline::new();
 pipeline.add_back(frame_decoder);
 pipeline.add_back(string_codec);
 pipeline.add_back(business_logic);
-pipeline.finalize()
+pipeline.finalize();
+```
+
+For shared pipelines:
+
+```rust
+use sansio::RcPipeline;
+use std::rc::Rc;
+
+let mut pipeline = RcPipeline::new();
+// ... add handlers ...
+pipeline.finalize();
+let pipeline = Rc::new(pipeline);  // Now shareable
 ```
 
 ### Handler
@@ -85,7 +101,6 @@ Build a simple pipeline:
 
 ```rust
 use sansio::{Pipeline, Handler, Context};
-use std::rc::Rc;
 
 // Define your handler
 struct EchoHandler;
@@ -103,15 +118,24 @@ impl Handler for EchoHandler {
         // Echo back
         ctx.write(msg);
     }
+
+    fn poll_write(&mut self, ctx: &Context<...>) -> Option<Self::Wout> {
+        ctx.fire_poll_write()
+    }
 }
 
 fn main() {
-    let pipeline: Rc<Pipeline<String, String>> = Rc::new(Pipeline::new());
+    let mut pipeline = Pipeline::new();
     pipeline.add_back(EchoHandler);
-    pipeline.finalize().expect("Failed to finalize pipeline");
+    pipeline.finalize();
 
     pipeline.transport_active();
     pipeline.handle_read("Hello".to_string());
+
+    // Process outbound messages
+    while let Some(msg) = pipeline.poll_write() {
+        println!("Sending: {}", msg);
+    }
 }
 ```
 

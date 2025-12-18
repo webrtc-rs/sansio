@@ -38,7 +38,7 @@ impl<W: 'static> BootstrapTcpClient<W> {
     pub async fn connect<A: ToSocketAddrs>(
         &mut self,
         addr: A,
-    ) -> Result<Rc<dyn OutboundPipeline<W>>, Error> {
+    ) -> Result<Rc<dyn RcOutboundPipeline<W>>, Error> {
         self.bootstrap_tcp.connect(addr).await
     }
 

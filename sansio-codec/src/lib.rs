@@ -25,9 +25,8 @@
 //!     LineBasedFrameDecoder, TaggedByteToMessageCodec, TaggedStringCodec, TerminatorType,
 //! };
 //! use sansio_transport::{TaggedBytesMut, TaggedString};
-//! use std::rc::Rc;
 //!
-//! let pipeline = Rc::new(Pipeline::<TaggedBytesMut, TaggedString>::new());
+//! let mut pipeline = Pipeline::<TaggedBytesMut, TaggedString>::new();
 //!
 //! // Add line-based frame decoder
 //! let frame_decoder = TaggedByteToMessageCodec::new(Box::new(
@@ -41,7 +40,21 @@
 //! // Add your business logic handler
 //! // pipeline.add_back(your_handler);
 //!
-//! pipeline.update();
+//! pipeline.finalize();
+//! ```
+//!
+//! For shared pipelines (e.g., UDP servers), use `RcPipeline`:
+//!
+//! ```rust,no_run
+//! use sansio::RcPipeline;
+//! use sansio_codec::{TaggedByteToMessageCodec, TaggedStringCodec};
+//! use sansio_transport::{TaggedBytesMut, TaggedString};
+//! use std::rc::Rc;
+//!
+//! let mut pipeline = RcPipeline::<TaggedBytesMut, TaggedString>::new();
+//! // ... add handlers ...
+//! pipeline.finalize();
+//! let pipeline = Rc::new(pipeline);  // Now shareable
 //! ```
 //!
 //! ## Modules

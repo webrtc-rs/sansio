@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sansio::{Context, Handler, InboundPipeline, OutboundPipeline, Pipeline};
+use sansio::{Context, Handler, RcInboundPipeline, RcOutboundPipeline, RcPipeline};
 use sansio_codec::{
     LineBasedFrameDecoder, TaggedByteToMessageCodec, TaggedStringCodec, TerminatorType,
 };
@@ -20,7 +20,7 @@ use sansio_transport::{TaggedBytesMut, TaggedString, TransportContext, Transport
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct Shared {
-    peers: HashMap<SocketAddr, Weak<dyn OutboundPipeline<TaggedString>>>,
+    peers: HashMap<SocketAddr, Weak<dyn RcOutboundPipeline<TaggedString>>>,
 }
 
 impl Shared {
@@ -35,7 +35,7 @@ impl Shared {
         self.peers.contains_key(peer)
     }
 
-    fn join(&mut self, peer: SocketAddr, pipeline: Weak<dyn OutboundPipeline<TaggedString>>) {
+    fn join(&mut self, peer: SocketAddr, pipeline: Weak<dyn RcOutboundPipeline<TaggedString>>) {
         println!("{} joined", peer);
         self.peers.insert(peer, pipeline);
     }
@@ -70,11 +70,14 @@ impl Shared {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct ChatHandler {
     state: Rc<RefCell<Shared>>,
-    pipeline: Weak<dyn OutboundPipeline<TaggedString>>,
+    pipeline: Weak<dyn RcOutboundPipeline<TaggedString>>,
 }
 
 impl ChatHandler {
-    fn new(state: Rc<RefCell<Shared>>, pipeline: Weak<dyn OutboundPipeline<TaggedString>>) -> Self {
+    fn new(
+        state: Rc<RefCell<Shared>>,
+        pipeline: Weak<dyn RcOutboundPipeline<TaggedString>>,
+    ) -> Self {
         ChatHandler { state, pipeline }
     }
 }
@@ -161,31 +164,37 @@ struct Cli {
     log_level: String,
 }
 
-fn build_pipeline() -> Rc<Pipeline<TaggedBytesMut, TaggedString>> {
+fn build_pipeline() -> Rc<RcPipeline<TaggedBytesMut, TaggedString>> {
     // Create the shared state. This is how all the peers communicate.
     // The server task will hold a handle to this. For every new client, the
     // `state` handle is cloned and passed into the handler that processes the
     // client connection.
     let state = Rc::new(RefCell::new(Shared::new()));
 
-    let pipeline: Rc<Pipeline<TaggedBytesMut, TaggedString>> = Rc::new(Pipeline::new());
+    Rc::new_cyclic(|pipeline_weak| {
+        let mut pipeline = RcPipeline::new();
 
-    let line_based_frame_decoder_handler = TaggedByteToMessageCodec::new(Box::new(
-        LineBasedFrameDecoder::new(8192, true, TerminatorType::BOTH),
-    ));
-    let string_codec_handler = TaggedStringCodec::new();
-    let pipeline_wr = Rc::downgrade(&pipeline);
-    let chat_handler = ChatHandler::new(state, pipeline_wr);
+        let line_based_frame_decoder_handler = TaggedByteToMessageCodec::new(Box::new(
+            LineBasedFrameDecoder::new(8192, true, TerminatorType::BOTH),
+        ));
+        let string_codec_handler = TaggedStringCodec::new();
+        let chat_handler = ChatHandler::new(
+            state,
+            pipeline_weak.clone() as Weak<dyn RcOutboundPipeline<TaggedString>>,
+        );
 
-    pipeline.add_back(line_based_frame_decoder_handler);
-    pipeline.add_back(string_codec_handler);
-    pipeline.add_back(chat_handler);
-    pipeline.update()
+        pipeline.add_back(line_based_frame_decoder_handler);
+        pipeline.add_back(string_codec_handler);
+        pipeline.add_back(chat_handler);
+        pipeline.finalize();
+
+        pipeline
+    })
 }
 
 fn write_socket_output(
     socket: &UdpSocket,
-    pipeline: &Rc<Pipeline<TaggedBytesMut, TaggedString>>,
+    pipeline: &Rc<RcPipeline<TaggedBytesMut, TaggedString>>,
 ) -> anyhow::Result<()> {
     while let Some(transmit) = pipeline.poll_write() {
         socket.send_to(&transmit.message, transmit.transport.peer_addr)?;

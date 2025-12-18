@@ -49,7 +49,7 @@ impl<W: 'static> BootstrapUdp<W> {
     async fn connect(
         &mut self,
         peer_addr: Option<SocketAddr>,
-    ) -> Result<Rc<dyn OutboundPipeline<W>>, Error> {
+    ) -> Result<Rc<dyn RcOutboundPipeline<W>>, Error> {
         let socket = self.socket.take().unwrap();
 
         let pipeline_factory_fn = Rc::clone(self.boostrap.pipeline_factory_fn.as_ref().unwrap());
@@ -179,17 +179,16 @@ impl<W: 'static> BootstrapUdp<W> {
                                 let message: BytesMut = buf[0..meta.len].into();
                                 if !message.is_empty() {
                                     trace!("socket read {} bytes", message.len());
-                                    pipeline
-                                        .handle_read(TaggedBytesMut {
-                                            now: Instant::now(),
-                                            transport: TransportContext {
-                                                local_addr,
-                                                peer_addr: meta.addr,
-                                                ecn: meta.ecn,
-                                                transport_protocol: TransportProtocol::UDP,
-                                            },
-                                            message,
-                                        });
+                                    pipeline.handle_read(TaggedBytesMut {
+                                        now: Instant::now(),
+                                        transport: TransportContext {
+                                            local_addr,
+                                            peer_addr: meta.addr,
+                                            ecn: meta.ecn,
+                                            transport_protocol: TransportProtocol::UDP,
+                                        },
+                                        message,
+                                    });
                                 }
                             }
                         }

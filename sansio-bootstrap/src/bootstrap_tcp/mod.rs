@@ -102,7 +102,7 @@ impl<W: 'static> BootstrapTcp<W> {
     async fn connect<A: ToSocketAddrs>(
         &self,
         addr: A,
-    ) -> Result<Rc<dyn OutboundPipeline<W>>, Error> {
+    ) -> Result<Rc<dyn RcOutboundPipeline<W>>, Error> {
         let socket = TcpStream::connect(addr).await?;
         let pipeline_factory_fn = Rc::clone(self.boostrap.pipeline_factory_fn.as_ref().unwrap());
 

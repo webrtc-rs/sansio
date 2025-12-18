@@ -53,6 +53,59 @@
 //!            Application
 //! ```
 //!
+//! ## Internal Architecture
+//!
+//! ### Ownership Model
+//!
+//! The pipeline uses direct ownership without `Rc` or `RefCell`:
+//!
+//! - **Pipeline owns all handlers**: Stored in `Vec<Box<dyn HandlerInternal>>`
+//! - **Pipeline owns all contexts**: Stored in `Vec<Box<dyn ContextInternal>>`
+//! - **Handlers linked via raw pointers**: Each context holds `*mut` pointers to next handler/context
+//!
+//! This design ensures:
+//! - **Zero overhead**: No reference counting or runtime borrow checking
+//! - **Exclusive ownership**: Pipeline methods take `&mut self`, enforcing single owner
+//! - **Type safety**: Handler chain types are checked at compile time
+//!
+//! ### Handler Linking
+//!
+//! During `finalize()`, the pipeline:
+//! 1. Creates raw pointers from boxed handlers (Box ensures stable addresses)
+//! 2. Sets these pointers in each context to link the chain
+//! 3. Configures LastHandler with a pointer to the transmits queue
+//!
+//! Raw pointers are safe because:
+//! - Pipeline owns all handlers/contexts for their lifetime
+//! - Pointers only accessed through `&self` context methods (immutable)
+//! - Handler modifications only happen through `&mut self` pipeline methods
+//! - Single-threaded use only (not thread-safe by design)
+//!
+//! ### Sharing Pipelines
+//!
+//! If you need to share a pipeline (e.g., for UDP broadcast or multi-client scenarios),
+//! use [`RcPipeline`] instead:
+//!
+//! ```rust
+//! use std::rc::Rc;
+//! use sansio::{RcPipeline, RcInboundPipeline};
+//!
+//! let mut pipeline = RcPipeline::<String, String>::new();
+//! // ... add handlers ...
+//! pipeline.finalize();
+//! let pipeline = Rc::new(pipeline);
+//!
+//! // Clone the Rc to share
+//! let pipeline_clone = pipeline.clone();
+//!
+//! // Use directly (no borrow_mut needed)
+//! pipeline.handle_read("Hello".to_string());
+//! pipeline_clone.handle_read("World".to_string());
+//! ```
+//!
+//! **Key difference**: [`RcPipeline`] has `&self` methods, while [`Pipeline`] has `&mut self` methods.
+//! Use [`RcPipeline`] when you need shared access, and [`Pipeline`] when you have exclusive ownership.
+//!
 //! ## Example: Building a Protocol Pipeline
 //!
 //! ```rust
@@ -109,12 +162,12 @@
 //! }
 //!
 //! // Build the pipeline
-//! let pipeline: Pipeline<Vec<u8>, Message> = Pipeline::new();
+//! let mut pipeline: Pipeline<Vec<u8>, Message> = Pipeline::new();
 //! pipeline
 //!     .add_back(FrameDecoder)
 //!     .add_back(MessageCodec);
 //!
-//! let pipeline = pipeline.finalize();
+//! pipeline.finalize();
 //!
 //! // Use the pipeline
 //! pipeline.handle_read(vec![72, 101, 108, 108, 111]); // "Hello"
@@ -199,9 +252,9 @@
 //! #         ctx.fire_poll_write()
 //! #     }
 //! # }
-//! let pipeline: Pipeline<String, String> = Pipeline::new();
+//! let mut pipeline = Pipeline::<String, String>::new();
 //! pipeline.add_back(MyHandler);
-//! let pipeline = pipeline.finalize();
+//! pipeline.finalize();
 //!
 //! // Use the pipeline
 //! pipeline.transport_active();
@@ -219,11 +272,9 @@
 //! 4. **Finalize Once**: Call `finalize()` after building your pipeline
 //! 5. **Event Propagation**: Most handlers should propagate events via `ctx.fire_*()`
 
-use std::{cell::RefCell, error::Error, rc::Rc, sync::Arc, time::Instant};
+use std::{error::Error, time::Instant};
 
-use crate::{handler::Handler, pipeline_internal::PipelineInternal};
-
-pub type NotifyCallback = Arc<dyn Fn() + Send + Sync>;
+use crate::{NotifyCallback, handler::Handler, pipeline_internal::PipelineInternal};
 
 /// Inbound operations for a pipeline.
 ///
@@ -266,9 +317,9 @@ pub type NotifyCallback = Arc<dyn Fn() + Send + Sync>;
 ///     }
 /// }
 ///
-/// let pipeline: Pipeline<Vec<u8>, String> = Pipeline::new();
+/// let mut pipeline = Pipeline::<Vec<u8>, String>::new();
 /// pipeline.add_back(SimpleHandler);
-/// let pipeline = pipeline.finalize();
+/// pipeline.finalize();
 ///
 /// // Push data into the pipeline
 /// pipeline.transport_active();
@@ -280,13 +331,13 @@ pub trait InboundPipeline<R> {
     ///
     /// Call this when a connection is established. The event will propagate
     /// through all handlers in the pipeline.
-    fn transport_active(&self);
+    fn transport_active(&mut self);
 
     /// Notifies the pipeline that the transport is inactive (disconnected).
     ///
     /// Call this when a connection is closed. The event will propagate
     /// through all handlers in the pipeline.
-    fn transport_inactive(&self);
+    fn transport_inactive(&mut self);
 
     /// Pushes an incoming message into the pipeline.
     ///
@@ -296,7 +347,7 @@ pub trait InboundPipeline<R> {
     /// # Parameters
     ///
     /// - `msg`: The incoming message (type `R`)
-    fn handle_read(&self, msg: R);
+    fn handle_read(&mut self, msg: R);
 
     /// Polls the pipeline for an outgoing message.
     ///
@@ -307,7 +358,7 @@ pub trait InboundPipeline<R> {
     ///
     /// - `Some(R)`: A message ready to send
     /// - `None`: No message available
-    fn poll_write(&self) -> Option<R>;
+    fn poll_write(&mut self) -> Option<R>;
 
     /// Handles a timeout event.
     ///
@@ -317,7 +368,7 @@ pub trait InboundPipeline<R> {
     /// # Parameters
     ///
     /// - `now`: The current timestamp
-    fn handle_timeout(&self, now: Instant);
+    fn handle_timeout(&mut self, now: Instant);
 
     /// Polls for the next timeout deadline.
     ///
@@ -327,12 +378,12 @@ pub trait InboundPipeline<R> {
     /// # Parameters
     ///
     /// - `eto`: Mutable reference to earliest timeout. Will be updated to the minimum across all handlers.
-    fn poll_timeout(&self, eto: &mut Instant);
+    fn poll_timeout(&mut self, eto: &mut Instant);
 
     /// Handles an end-of-file event.
     ///
     /// Call this when the input stream is closed (e.g., TCP FIN received).
-    fn handle_eof(&self);
+    fn handle_eof(&mut self);
 
     /// Handles an error event.
     ///
@@ -341,7 +392,7 @@ pub trait InboundPipeline<R> {
     /// # Parameters
     ///
     /// - `err`: The error to propagate through the pipeline
-    fn handle_error(&self, err: Box<dyn Error>);
+    fn handle_error(&mut self, err: Box<dyn Error>);
 
     #[doc(hidden)]
     /// Sets a notify mechanism for write operations.
@@ -352,7 +403,7 @@ pub trait InboundPipeline<R> {
     /// # Parameters
     ///
     /// - `notify`: A callback function that will be invoked when writes occur
-    fn set_write_notify(&self, notify: NotifyCallback);
+    fn set_write_notify(&mut self, notify: NotifyCallback);
 }
 
 /// Outbound operations for a pipeline.
@@ -374,9 +425,9 @@ pub trait InboundPipeline<R> {
 /// ```rust
 /// use sansio::{Pipeline, OutboundPipeline};
 ///
-/// let pipeline: Pipeline<Vec<u8>, String> = Pipeline::new();
+/// let mut pipeline = Pipeline::<Vec<u8>, String>::new();
 /// // ... add handlers ...
-/// let pipeline = pipeline.finalize();
+/// pipeline.finalize();
 ///
 /// // Send data from application
 /// pipeline.write("Hello, World!".to_string());
@@ -392,13 +443,13 @@ pub trait OutboundPipeline<W> {
     /// # Parameters
     ///
     /// - `msg`: The message to write (type `W`)
-    fn write(&self, msg: W);
+    fn write(&mut self, msg: W);
 
     /// Initiates pipeline close.
     ///
     /// Sends a close event through the pipeline, allowing handlers to
     /// flush buffers and clean up resources.
-    fn close(&self);
+    fn close(&mut self);
 }
 
 /// A pipeline of handlers for processing protocol messages.
@@ -439,11 +490,11 @@ pub trait OutboundPipeline<W> {
 /// #     }
 /// # }
 /// // Create and build pipeline
-/// let pipeline: Pipeline<String, String> = Pipeline::new();
+/// let mut pipeline = Pipeline::<String, String>::new();
 /// pipeline.add_back(EchoHandler);
 ///
 /// // Finalize before use
-/// let pipeline = pipeline.finalize();
+/// pipeline.finalize();
 ///
 /// // Use the pipeline
 /// pipeline.transport_active();
@@ -452,14 +503,8 @@ pub trait OutboundPipeline<W> {
 ///     println!("Got: {}", msg);
 /// }
 /// ```
-///
-/// # Thread Safety
-///
-/// Pipelines use `Rc` (not `Arc`) and are **not** thread-safe. They are designed
-/// for single-threaded I/O loops. For multi-threaded usage, create separate
-/// pipelines per thread.
 pub struct Pipeline<R, W> {
-    internal: RefCell<PipelineInternal<R, W>>,
+    internal: PipelineInternal<R, W>,
 }
 
 impl<R: 'static, W: 'static> Default for Pipeline<R, W> {
@@ -487,7 +532,7 @@ impl<R: 'static, W: 'static> Pipeline<R, W> {
     /// [`finalize`]: Pipeline::finalize
     pub fn new() -> Self {
         Self {
-            internal: RefCell::new(PipelineInternal::new()),
+            internal: PipelineInternal::new(),
         }
     }
 
@@ -527,16 +572,13 @@ impl<R: 'static, W: 'static> Pipeline<R, W> {
     /// #     fn handle_read(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>, _: Self::Rin) {}
     /// #     fn poll_write(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) -> Option<Self::Wout> { None }
     /// # }
-    /// let pipeline: Pipeline<String, String> = Pipeline::new();
+    /// let mut pipeline = Pipeline::<String, String>::new();
     /// pipeline
     ///     .add_back(H1)  // First handler
     ///     .add_back(H2); // Second handler
     /// ```
-    pub fn add_back(&self, handler: impl Handler + 'static) -> &Self {
-        {
-            let mut internal = self.internal.borrow_mut();
-            internal.add_back(handler);
-        }
+    pub fn add_back(&mut self, handler: impl Handler + 'static) -> &mut Self {
+        self.internal.add_back(handler);
         self
     }
 
@@ -564,14 +606,11 @@ impl<R: 'static, W: 'static> Pipeline<R, W> {
     /// #     fn handle_read(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>, _: Self::Rin) {}
     /// #     fn poll_write(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) -> Option<Self::Wout> { None }
     /// # }
-    /// let pipeline: Pipeline<String, String> = Pipeline::new();
+    /// let mut pipeline: Pipeline<String, String> = Pipeline::new();
     /// pipeline.add_front(H1); // Will be first in chain
     /// ```
-    pub fn add_front(&self, handler: impl Handler + 'static) -> &Self {
-        {
-            let mut internal = self.internal.borrow_mut();
-            internal.add_front(handler);
-        }
+    pub fn add_front(&mut self, handler: impl Handler + 'static) -> &mut Self {
+        self.internal.add_front(handler);
         self
     }
 
@@ -596,15 +635,12 @@ impl<R: 'static, W: 'static> Pipeline<R, W> {
     /// #     fn handle_read(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>, _: Self::Rin) {}
     /// #     fn poll_write(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) -> Option<Self::Wout> { None }
     /// # }
-    /// let pipeline: Pipeline<String, String> = Pipeline::new();
+    /// let mut pipeline: Pipeline<String, String> = Pipeline::new();
     /// pipeline.add_back(H1);
     /// pipeline.remove_back().unwrap();
     /// ```
-    pub fn remove_back(&self) -> Result<&Self, std::io::Error> {
-        let result = {
-            let mut internal = self.internal.borrow_mut();
-            internal.remove_back()
-        };
+    pub fn remove_back(&mut self) -> Result<&mut Self, std::io::Error> {
+        let result = self.internal.remove_back();
         match result {
             Ok(()) => Ok(self),
             Err(err) => Err(err),
@@ -617,11 +653,8 @@ impl<R: 'static, W: 'static> Pipeline<R, W> {
     ///
     /// - `Ok(&self)`: Handler removed successfully (for chaining)
     /// - `Err(io::Error)`: Pipeline is empty
-    pub fn remove_front(&self) -> Result<&Self, std::io::Error> {
-        let result = {
-            let mut internal = self.internal.borrow_mut();
-            internal.remove_front()
-        };
+    pub fn remove_front(&mut self) -> Result<&mut Self, std::io::Error> {
+        let result = self.internal.remove_front();
         match result {
             Ok(()) => Ok(self),
             Err(err) => Err(err),
@@ -655,17 +688,14 @@ impl<R: 'static, W: 'static> Pipeline<R, W> {
     /// #     fn handle_read(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>, _: Self::Rin) {}
     /// #     fn poll_write(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) -> Option<Self::Wout> { None }
     /// # }
-    /// let pipeline: Pipeline<String, String> = Pipeline::new();
+    /// let mut pipeline = Pipeline::<String, String>::new();
     /// pipeline.add_back(MyHandler);
-    /// let pipeline = pipeline.finalize();
+    /// pipeline.finalize();
     ///
     /// pipeline.remove("MyHandler").unwrap();
     /// ```
-    pub fn remove(&self, handler_name: &str) -> Result<&Self, std::io::Error> {
-        let result = {
-            let mut internal = self.internal.borrow_mut();
-            internal.remove(handler_name)
-        };
+    pub fn remove(&mut self, handler_name: &str) -> Result<&mut Self, std::io::Error> {
+        let result = self.internal.remove(handler_name);
         match result {
             Ok(()) => Ok(self),
             Err(err) => Err(err),
@@ -689,141 +719,77 @@ impl<R: 'static, W: 'static> Pipeline<R, W> {
     /// #     fn handle_read(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>, _: Self::Rin) {}
     /// #     fn poll_write(&mut self, _: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) -> Option<Self::Wout> { None }
     /// # }
-    /// let pipeline: Pipeline<String, String> = Pipeline::new();
+    /// let mut pipeline: Pipeline<String, String> = Pipeline::new();
     /// assert_eq!(pipeline.len(), 0);
     ///
     /// pipeline.add_back(H1);
     /// assert_eq!(pipeline.len(), 1);
     /// ```
     pub fn len(&self) -> usize {
-        let internal = self.internal.borrow();
-        internal.len()
+        self.internal.len()
     }
 
     /// Finalize the pipeline, making it ready for use.
-    pub fn finalize(&self) {
-        let internal = self.internal.borrow();
-        internal.finalize();
-    }
-
-    /// Updates an `Rc`-wrapped pipeline's internal structure.
-    ///
-    /// Called internally by [`finalize`]. You typically don't need to call this directly.
-    ///
-    /// [`finalize`]: Pipeline::finalize
-    pub fn update(self: Rc<Self>) -> Rc<Self> {
-        self.finalize();
-        self
-    }
-
-    /// Builds the pipeline, making it ready for use.
-    ///
-    /// This method:
-    /// 1. Wraps the pipeline in `Rc` for shared ownership
-    /// 2. Links handlers together internally
-    /// 3. Returns the finalized `Rc<Pipeline>`
-    ///
-    /// **You must call this before using the pipeline.**
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use sansio::{Pipeline, InboundPipeline, Handler, Context};
-    /// # struct H1;
-    /// # impl Handler for H1 {
-    /// #     type Rin = String;
-    /// #     type Rout = String;
-    /// #     type Win = String;
-    /// #     type Wout = String;
-    /// #     fn name(&self) -> &str { "H1" }
-    /// #     fn handle_read(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>, msg: Self::Rin) {
-    /// #         ctx.fire_handle_read(msg);
-    /// #     }
-    /// #     fn poll_write(&mut self, ctx: &Context<Self::Rin, Self::Rout, Self::Win, Self::Wout>) -> Option<Self::Wout> {
-    /// #         ctx.fire_poll_write()
-    /// #     }
-    /// # }
-    /// let pipeline: Pipeline<String, String> = Pipeline::new();
-    /// pipeline.add_back(H1);
-    ///
-    /// // Finalize before use
-    /// let pipeline = pipeline.build();
-    ///
-    /// // Now ready to use
-    /// pipeline.handle_read("Hello".to_string());
-    /// ```
-    pub fn build(self) -> Rc<Self> {
-        let pipeline = Rc::new(self);
-        pipeline.update()
+    pub fn finalize(&mut self) {
+        self.internal.finalize();
     }
 }
 
 impl<R: 'static, W: 'static> InboundPipeline<R> for Pipeline<R, W> {
     /// Transport is active now, which means it is connected.
-    fn transport_active(&self) {
-        let internal = self.internal.borrow();
-        internal.transport_active();
+    fn transport_active(&mut self) {
+        self.internal.transport_active();
     }
 
     /// Transport is inactive now, which means it is disconnected.
-    fn transport_inactive(&self) {
-        let internal = self.internal.borrow();
-        internal.transport_inactive();
+    fn transport_inactive(&mut self) {
+        self.internal.transport_inactive();
     }
 
     /// Handles an incoming message.
-    fn handle_read(&self, msg: R) {
-        let internal = self.internal.borrow();
-        internal.handle_read(msg);
+    fn handle_read(&mut self, msg: R) {
+        self.internal.handle_read(msg);
     }
 
     /// Polls an outgoing message
-    fn poll_write(&self) -> Option<R> {
-        let internal = self.internal.borrow();
-        internal.poll_write()
+    fn poll_write(&mut self) -> Option<R> {
+        self.internal.poll_write()
     }
 
     /// Handles a timeout event.
-    fn handle_timeout(&self, now: Instant) {
-        let internal = self.internal.borrow();
-        internal.handle_timeout(now);
+    fn handle_timeout(&mut self, now: Instant) {
+        self.internal.handle_timeout(now);
     }
 
     /// Polls earliest timeout (eto) in its inbound operations.
-    fn poll_timeout(&self, eto: &mut Instant) {
-        let internal = self.internal.borrow();
-        internal.poll_timeout(eto);
+    fn poll_timeout(&mut self, eto: &mut Instant) {
+        self.internal.poll_timeout(eto);
     }
 
     /// Handles an EOF event.
-    fn handle_eof(&self) {
-        let internal = self.internal.borrow();
-        internal.handle_eof();
+    fn handle_eof(&mut self) {
+        self.internal.handle_eof();
     }
 
     /// Handles an Error in one of its inbound operations.
-    fn handle_error(&self, err: Box<dyn Error>) {
-        let internal = self.internal.borrow();
-        internal.handle_error(err);
+    fn handle_error(&mut self, err: Box<dyn Error>) {
+        self.internal.handle_error(err);
     }
 
     #[doc(hidden)]
-    fn set_write_notify(&self, notify: NotifyCallback) {
-        let internal = self.internal.borrow();
-        internal.set_write_notify(notify);
+    fn set_write_notify(&mut self, notify: NotifyCallback) {
+        self.internal.set_write_notify(notify);
     }
 }
 
 impl<R: 'static, W: 'static> OutboundPipeline<W> for Pipeline<R, W> {
     /// Writes a message to pipeline
-    fn write(&self, msg: W) {
-        let internal = self.internal.borrow();
-        internal.write(msg);
+    fn write(&mut self, msg: W) {
+        self.internal.write(msg);
     }
 
     /// Writes a close event.
-    fn close(&self) {
-        let internal = self.internal.borrow();
-        internal.handle_close();
+    fn close(&mut self) {
+        self.internal.handle_close();
     }
 }

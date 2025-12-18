@@ -188,9 +188,7 @@
 use crate::handler_internal::{ContextInternal, HandlerInternal};
 use log::warn;
 use std::any::Any;
-use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::rc::Rc;
 use std::{error::Error, time::Instant};
 
 /// A handler processes messages flowing through a pipeline.
@@ -268,13 +266,7 @@ pub trait Handler {
 
     #[doc(hidden)]
     #[allow(clippy::type_complexity)]
-    fn generate(
-        self,
-    ) -> (
-        String,
-        Rc<RefCell<dyn HandlerInternal>>,
-        Rc<RefCell<dyn ContextInternal>>,
-    )
+    fn generate(self) -> (String, Box<dyn HandlerInternal>, Box<dyn ContextInternal>)
     where
         Self: Sized + 'static,
     {
@@ -286,11 +278,7 @@ pub trait Handler {
             dyn Handler<Rin = Self::Rin, Rout = Self::Rout, Win = Self::Win, Wout = Self::Wout>,
         > = Box::new(self);
 
-        (
-            handler_name,
-            Rc::new(RefCell::new(handler)),
-            Rc::new(RefCell::new(context)),
-        )
+        (handler_name, Box::new(handler), Box::new(context))
     }
 
     /// Called when the transport becomes active (connected).
@@ -650,6 +638,9 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> HandlerInternal
             );
         }
     }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 /// Enables a [`Handler`] to interact with the pipeline.
@@ -664,6 +655,28 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> HandlerInternal
 /// - `Rout`: Read output message type (what the current handler produces)
 /// - `Win`: Write input message type (what the current handler receives for writing)
 /// - `Wout`: Write output message type (what the current handler produces for writing)
+///
+/// # Architecture
+///
+/// Context uses raw pointers to link handlers in the chain:
+///
+/// ```text
+/// Handler[0] ──> Handler[1] ──> Handler[2] ──> LastHandler
+///    │              │              │               │
+///    └─Context[0]   └─Context[1]   └─Context[2]   └─Context[3]
+///       │              │              │
+///       └──────────────┴──────────────┘
+///          raw pointers to next handler/context
+/// ```
+///
+/// Each context holds:
+/// - `next_handler: *mut dyn HandlerInternal` - Pointer to the next handler
+/// - `next_context: *mut dyn ContextInternal` - Pointer to the next context
+///
+/// These pointers are set during pipeline finalization and remain valid because:
+/// - The pipeline owns all handlers and contexts for their lifetime
+/// - Box ensures stable addresses even if the Vec reallocates
+/// - Single-threaded use only (not thread-safe)
 ///
 /// # Responsibilities
 ///
@@ -707,16 +720,27 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> HandlerInternal
 /// }
 /// ```
 pub struct Context<Rin, Rout, Win, Wout> {
+    /// Handler name for debugging and error messages
     name: String,
 
-    next_context: Option<Rc<RefCell<dyn ContextInternal>>>,
-    next_handler: Option<Rc<RefCell<dyn HandlerInternal>>>,
+    /// Raw pointer to the next context in the handler chain.
+    ///
+    /// Set during pipeline finalization. None if this is the last handler.
+    next_context: Option<*mut dyn ContextInternal>,
+
+    /// Raw pointer to the next handler in the handler chain.
+    ///
+    /// Set during pipeline finalization. None if this is the last handler.
+    next_handler: Option<*mut dyn HandlerInternal>,
 
     phantom: PhantomData<(Rin, Rout, Win, Wout)>,
 }
 
 impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout, Win, Wout> {
-    /// Creates a new Context.
+    /// Creates a new Context with null handler/context pointers.
+    ///
+    /// The pointers will be set during pipeline finalization when the handler
+    /// chain is established.
     ///
     /// Typically called internally by the pipeline when adding a handler.
     /// You rarely need to create a Context manually.
@@ -727,10 +751,8 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
-
             next_context: None,
             next_handler: None,
-
             phantom: PhantomData,
         }
     }
@@ -741,10 +763,12 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
     /// This should be called from your [`Handler::transport_active`] implementation
     /// unless you explicitly want to stop event propagation.
     pub fn fire_transport_active(&self) {
-        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
-            let (mut next_handler, next_context) =
-                (next_handler.borrow_mut(), next_context.borrow());
-            next_handler.transport_active_internal(&*next_context);
+        if let (Some(next_handler), Some(next_context)) = (self.next_handler, self.next_context) {
+            unsafe {
+                let handler = &mut *next_handler;
+                let context = &*next_context;
+                handler.transport_active_internal(context);
+            }
         }
     }
 
@@ -754,10 +778,12 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
     /// This should be called from your [`Handler::transport_inactive`] implementation
     /// unless you explicitly want to stop event propagation.
     pub fn fire_transport_inactive(&self) {
-        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
-            let (mut next_handler, next_context) =
-                (next_handler.borrow_mut(), next_context.borrow());
-            next_handler.transport_inactive_internal(&*next_context);
+        if let (Some(next_handler), Some(next_context)) = (self.next_handler, self.next_context) {
+            unsafe {
+                let handler = &mut *next_handler;
+                let context = &*next_context;
+                handler.transport_inactive_internal(context);
+            }
         }
     }
 
@@ -792,10 +818,12 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
     /// # }
     /// ```
     pub fn fire_handle_read(&self, msg: Rout) {
-        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
-            let (mut next_handler, next_context) =
-                (next_handler.borrow_mut(), next_context.borrow());
-            next_handler.handle_read_internal(&*next_context, Box::new(msg));
+        if let (Some(next_handler), Some(next_context)) = (self.next_handler, self.next_context) {
+            unsafe {
+                let handler = &mut *next_handler;
+                let context = &*next_context;
+                handler.handle_read_internal(context, Box::new(msg));
+            }
         } else {
             warn!("handle_read reached end of pipeline");
         }
@@ -837,20 +865,19 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
     /// # }
     /// ```
     pub fn fire_poll_write(&self) -> Option<Win> {
-        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
-            let (mut next_handler, next_context) =
-                (next_handler.borrow_mut(), next_context.borrow());
-            if let Some(msg) = next_handler.poll_write_internal(&*next_context) {
-                if let Ok(msg) = msg.downcast::<Win>() {
-                    Some(*msg)
+        if let (Some(next_handler), Some(next_context)) = (self.next_handler, self.next_context) {
+            unsafe {
+                let handler = &mut *next_handler;
+                let context = &*next_context;
+                if let Some(msg) = handler.poll_write_internal(context) {
+                    if let Ok(msg) = msg.downcast::<Win>() {
+                        Some(*msg)
+                    } else {
+                        panic!("msg can't downcast::<Win> in {} handler", context.name());
+                    }
                 } else {
-                    panic!(
-                        "msg can't downcast::<Win> in {} handler",
-                        next_context.name()
-                    );
+                    None
                 }
-            } else {
-                None
             }
         } else {
             warn!("poll_write reached end of pipeline");
@@ -867,10 +894,12 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
     ///
     /// - `now`: The current timestamp
     pub fn fire_handle_timeout(&self, now: Instant) {
-        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
-            let (mut next_handler, next_context) =
-                (next_handler.borrow_mut(), next_context.borrow());
-            next_handler.handle_timeout_internal(&*next_context, now);
+        if let (Some(next_handler), Some(next_context)) = (self.next_handler, self.next_context) {
+            unsafe {
+                let handler = &mut *next_handler;
+                let context = &*next_context;
+                handler.handle_timeout_internal(context, now);
+            }
         } else {
             warn!("handle_timeout reached end of pipeline");
         }
@@ -885,10 +914,12 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
     ///
     /// - `eto`: Mutable reference to the earliest timeout. The next handler may update this.
     pub fn fire_poll_timeout(&self, eto: &mut Instant) {
-        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
-            let (mut next_handler, next_context) =
-                (next_handler.borrow_mut(), next_context.borrow());
-            next_handler.poll_timeout_internal(&*next_context, eto);
+        if let (Some(next_handler), Some(next_context)) = (self.next_handler, self.next_context) {
+            unsafe {
+                let handler = &mut *next_handler;
+                let context = &*next_context;
+                handler.poll_timeout_internal(context, eto);
+            }
         } else {
             warn!("poll_timeout reached end of pipeline");
         }
@@ -899,10 +930,12 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
     /// Call this from [`Handler::handle_eof`] to forward the end-of-file event
     /// through the pipeline.
     pub fn fire_handle_eof(&self) {
-        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
-            let (mut next_handler, next_context) =
-                (next_handler.borrow_mut(), next_context.borrow());
-            next_handler.handle_eof_internal(&*next_context);
+        if let (Some(next_handler), Some(next_context)) = (self.next_handler, self.next_context) {
+            unsafe {
+                let handler = &mut *next_handler;
+                let context = &*next_context;
+                handler.handle_eof_internal(context);
+            }
         } else {
             warn!("handle_eof reached end of pipeline");
         }
@@ -917,10 +950,12 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
     ///
     /// - `err`: The error to propagate
     pub fn fire_handle_error(&self, err: Box<dyn Error>) {
-        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
-            let (mut next_handler, next_context) =
-                (next_handler.borrow_mut(), next_context.borrow());
-            next_handler.handle_error_internal(&*next_context, err);
+        if let (Some(next_handler), Some(next_context)) = (self.next_handler, self.next_context) {
+            unsafe {
+                let handler = &mut *next_handler;
+                let context = &*next_context;
+                handler.handle_error_internal(context, err);
+            }
         } else {
             warn!("handle_error reached end of pipeline");
         }
@@ -931,10 +966,12 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> Context<Rin, Rout
     /// Call this from [`Handler::handle_close`] to forward the close request
     /// through the pipeline.
     pub fn fire_handle_close(&self) {
-        if let (Some(next_handler), Some(next_context)) = (&self.next_handler, &self.next_context) {
-            let (mut next_handler, next_context) =
-                (next_handler.borrow_mut(), next_context.borrow());
-            next_handler.handle_close_internal(&*next_context);
+        if let (Some(next_handler), Some(next_context)) = (self.next_handler, self.next_context) {
+            unsafe {
+                let handler = &mut *next_handler;
+                let context = &*next_context;
+                handler.handle_close_internal(context);
+            }
         } else {
             warn!("handle_close reached end of pipeline");
         }
@@ -988,10 +1025,14 @@ impl<Rin: 'static, Rout: 'static, Win: 'static, Wout: 'static> ContextInternal
     fn as_any(&self) -> &dyn Any {
         self
     }
-    fn set_next_context(&mut self, next_context: Option<Rc<RefCell<dyn ContextInternal>>>) {
-        self.next_context = next_context;
+    fn set_next_context(&mut self, next_context: *mut dyn ContextInternal) {
+        self.next_context = Some(next_context);
     }
-    fn set_next_handler(&mut self, next_handler: Option<Rc<RefCell<dyn HandlerInternal>>>) {
-        self.next_handler = next_handler;
+    fn set_next_handler(&mut self, next_handler: *mut dyn HandlerInternal) {
+        self.next_handler = Some(next_handler);
+    }
+    fn clear_next(&mut self) {
+        self.next_context = None;
+        self.next_handler = None;
     }
 }

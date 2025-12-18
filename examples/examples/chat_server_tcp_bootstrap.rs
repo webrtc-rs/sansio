@@ -5,18 +5,18 @@ use std::{
     str::FromStr, time::Instant,
 };
 
-use sansio::{Context, Handler, OutboundPipeline, Pipeline};
+use sansio::{Context, Handler, RcOutboundPipeline, RcPipeline};
 use sansio_bootstrap::BootstrapTcpServer;
 use sansio_codec::{
     byte_to_message_decoder::{LineBasedFrameDecoder, TaggedByteToMessageCodec, TerminatorType},
     string_codec::TaggedStringCodec,
 };
 use sansio_executor::LocalExecutorBuilder;
-use sansio_transport::{TaggedBytesMut, TaggedString, TransportContext};
+use sansio_transport::{TaggedString, TransportContext};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct Shared {
-    peers: HashMap<SocketAddr, Weak<dyn OutboundPipeline<TaggedString>>>,
+    peers: HashMap<SocketAddr, Weak<dyn RcOutboundPipeline<TaggedString>>>,
 }
 
 impl Shared {
@@ -31,7 +31,7 @@ impl Shared {
         self.peers.contains_key(peer)
     }
 
-    fn join(&mut self, peer: SocketAddr, pipeline: Weak<dyn OutboundPipeline<TaggedString>>) {
+    fn join(&mut self, peer: SocketAddr, pipeline: Weak<dyn RcOutboundPipeline<TaggedString>>) {
         info!("{} joined", peer);
         self.peers.insert(peer, pipeline);
     }
@@ -66,12 +66,15 @@ impl Shared {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct ChatHandler {
     state: Rc<RefCell<Shared>>,
-    pipeline: Weak<dyn OutboundPipeline<TaggedString>>,
+    pipeline: Weak<dyn RcOutboundPipeline<TaggedString>>,
     peer_addr: Option<SocketAddr>,
 }
 
 impl ChatHandler {
-    fn new(state: Rc<RefCell<Shared>>, pipeline: Weak<dyn OutboundPipeline<TaggedString>>) -> Self {
+    fn new(
+        state: Rc<RefCell<Shared>>,
+        pipeline: Weak<dyn RcOutboundPipeline<TaggedString>>,
+    ) -> Self {
         ChatHandler {
             state,
             pipeline,
@@ -203,19 +206,25 @@ fn main() -> anyhow::Result<()> {
 
         let mut bootstrap = BootstrapTcpServer::new();
         bootstrap.pipeline(Box::new(move |_local_addr, _peer_addr| {
-            let pipeline: Rc<Pipeline<TaggedBytesMut, TaggedString>> = Rc::new(Pipeline::new());
+            Rc::new_cyclic(|pipeline_weak| {
+                let mut pipeline = RcPipeline::new();
 
-            let line_based_frame_decoder_handler = TaggedByteToMessageCodec::new(Box::new(
-                LineBasedFrameDecoder::new(8192, true, TerminatorType::BOTH),
-            ));
-            let string_codec_handler = TaggedStringCodec::new();
-            let pipeline_wr = Rc::downgrade(&pipeline);
-            let chat_handler = ChatHandler::new(state.clone(), pipeline_wr);
+                let line_based_frame_decoder_handler = TaggedByteToMessageCodec::new(Box::new(
+                    LineBasedFrameDecoder::new(8192, true, TerminatorType::BOTH),
+                ));
+                let string_codec_handler = TaggedStringCodec::new();
+                let chat_handler = ChatHandler::new(
+                    state.clone(),
+                    pipeline_weak.clone() as Weak<dyn RcOutboundPipeline<TaggedString>>,
+                );
 
-            pipeline.add_back(line_based_frame_decoder_handler);
-            pipeline.add_back(string_codec_handler);
-            pipeline.add_back(chat_handler);
-            pipeline.update()
+                pipeline.add_back(line_based_frame_decoder_handler);
+                pipeline.add_back(string_codec_handler);
+                pipeline.add_back(chat_handler);
+                pipeline.finalize();
+
+                pipeline
+            })
         }));
 
         bootstrap.bind(format!("{}:{}", host, port)).await.unwrap();

@@ -1,7 +1,5 @@
 use std::any::Any;
-use std::cell::RefCell;
 use std::error::Error;
-use std::rc::Rc;
 use std::time::Instant;
 
 #[doc(hidden)]
@@ -18,6 +16,8 @@ pub trait HandlerInternal {
     fn handle_eof_internal(&mut self, ctx: &dyn ContextInternal);
     fn handle_error_internal(&mut self, ctx: &dyn ContextInternal, err: Box<dyn Error>);
     fn handle_close_internal(&mut self, ctx: &dyn ContextInternal);
+
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 #[doc(hidden)]
@@ -37,6 +37,7 @@ pub trait ContextInternal {
 
     fn name(&self) -> &str;
     fn as_any(&self) -> &dyn Any;
-    fn set_next_context(&mut self, next_in_context: Option<Rc<RefCell<dyn ContextInternal>>>);
-    fn set_next_handler(&mut self, next_in_handler: Option<Rc<RefCell<dyn HandlerInternal>>>);
+    fn set_next_context(&mut self, next_context: *mut dyn ContextInternal);
+    fn set_next_handler(&mut self, next_handler: *mut dyn HandlerInternal);
+    fn clear_next(&mut self);
 }

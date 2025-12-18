@@ -18,7 +18,7 @@ use tokio::{
 };
 use wg::AsyncWaitGroup;
 
-use sansio::{Context, Handler, InboundPipeline, OutboundPipeline, Pipeline};
+use sansio::{Context, Handler, RcInboundPipeline, RcOutboundPipeline, RcPipeline};
 use sansio_executor::{LocalExecutorBuilder, spawn_local};
 
 use sansio_codec::{
@@ -28,7 +28,7 @@ use sansio_transport::{TaggedBytesMut, TaggedString, TransportContext, Transport
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct Shared {
-    peers: HashMap<SocketAddr, Weak<dyn OutboundPipeline<TaggedString>>>,
+    peers: HashMap<SocketAddr, Weak<dyn RcOutboundPipeline<TaggedString>>>,
 }
 
 impl Shared {
@@ -43,7 +43,7 @@ impl Shared {
         self.peers.contains_key(peer)
     }
 
-    fn join(&mut self, peer: SocketAddr, pipeline: Weak<dyn OutboundPipeline<TaggedString>>) {
+    fn join(&mut self, peer: SocketAddr, pipeline: Weak<dyn RcOutboundPipeline<TaggedString>>) {
         info!("{} joined", peer);
         self.peers.insert(peer, pipeline);
     }
@@ -78,12 +78,15 @@ impl Shared {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct ChatHandler {
     state: Rc<RefCell<Shared>>,
-    pipeline: Weak<dyn OutboundPipeline<TaggedString>>,
+    pipeline: Weak<dyn RcOutboundPipeline<TaggedString>>,
     peer_addr: Option<SocketAddr>,
 }
 
 impl ChatHandler {
-    fn new(state: Rc<RefCell<Shared>>, pipeline: Weak<dyn OutboundPipeline<TaggedString>>) -> Self {
+    fn new(
+        state: Rc<RefCell<Shared>>,
+        pipeline: Weak<dyn RcOutboundPipeline<TaggedString>>,
+    ) -> Self {
         ChatHandler {
             state,
             pipeline,
@@ -182,20 +185,26 @@ struct Cli {
     log_level: String,
 }
 
-fn build_pipeline(state: Rc<RefCell<Shared>>) -> Rc<Pipeline<TaggedBytesMut, TaggedString>> {
-    let pipeline: Rc<Pipeline<TaggedBytesMut, TaggedString>> = Rc::new(Pipeline::new());
+fn build_pipeline(state: Rc<RefCell<Shared>>) -> Rc<RcPipeline<TaggedBytesMut, TaggedString>> {
+    Rc::new_cyclic(|pipeline_weak| {
+        let mut pipeline = RcPipeline::new();
 
-    let line_based_frame_decoder_handler = TaggedByteToMessageCodec::new(Box::new(
-        LineBasedFrameDecoder::new(8192, true, TerminatorType::BOTH),
-    ));
-    let string_codec_handler = TaggedStringCodec::new();
-    let pipeline_wr = Rc::downgrade(&pipeline);
-    let chat_handler = ChatHandler::new(state, pipeline_wr);
+        let line_based_frame_decoder_handler = TaggedByteToMessageCodec::new(Box::new(
+            LineBasedFrameDecoder::new(8192, true, TerminatorType::BOTH),
+        ));
+        let string_codec_handler = TaggedStringCodec::new();
+        let chat_handler = ChatHandler::new(
+            state,
+            pipeline_weak.clone() as Weak<dyn RcOutboundPipeline<TaggedString>>,
+        );
 
-    pipeline.add_back(line_based_frame_decoder_handler);
-    pipeline.add_back(string_codec_handler);
-    pipeline.add_back(chat_handler);
-    pipeline.update()
+        pipeline.add_back(line_based_frame_decoder_handler);
+        pipeline.add_back(string_codec_handler);
+        pipeline.add_back(chat_handler);
+        pipeline.finalize();
+
+        pipeline
+    })
 }
 
 async fn process_pipeline(

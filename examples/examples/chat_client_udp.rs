@@ -1,16 +1,15 @@
 use clap::Parser;
 use futures::StreamExt;
 use log::info;
-use sansio::{Context, Handler, Pipeline};
+use sansio::{Context, Handler, RcPipeline};
 use sansio_bootstrap::BootstrapUdpClient;
 use sansio_codec::{
     byte_to_message_decoder::{LineBasedFrameDecoder, TaggedByteToMessageCodec, TerminatorType},
     string_codec::TaggedStringCodec,
 };
 use sansio_executor::LocalExecutorBuilder;
-use sansio_transport::{TaggedBytesMut, TaggedString, TransportContext, TransportProtocol};
-use std::rc::Rc;
-use std::{io::Write, net::SocketAddr, str::FromStr, time::Instant};
+use sansio_transport::{TaggedString, TransportContext, TransportProtocol};
+use std::{io::Write, net::SocketAddr, rc::Rc, str::FromStr, time::Instant};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct ChatHandler;
@@ -116,7 +115,7 @@ fn main() -> anyhow::Result<()> {
     LocalExecutorBuilder::default().run(async move {
         let mut bootstrap = BootstrapUdpClient::new();
         bootstrap.pipeline(Box::new(move |_local_addr, _peer_addr| {
-            let pipeline: Pipeline<TaggedBytesMut, TaggedString> = Pipeline::new();
+            let mut pipeline = RcPipeline::new();
 
             let line_based_frame_decoder_handler = TaggedByteToMessageCodec::new(Box::new(
                 LineBasedFrameDecoder::new(8192, true, TerminatorType::BOTH),
@@ -128,6 +127,7 @@ fn main() -> anyhow::Result<()> {
             pipeline.add_back(string_codec_handler);
             pipeline.add_back(echo_handler);
             pipeline.finalize();
+
             Rc::new(pipeline)
         }));
 

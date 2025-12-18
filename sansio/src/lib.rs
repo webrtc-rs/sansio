@@ -8,11 +8,23 @@
 //!
 //! ## Core Concepts
 //!
-//! ### Pipeline
+//! ### Pipeline Variants
 //!
-//! The [`Pipeline`] is the fundamental abstraction. It's a chain of [`Handler`]s that process
-//! inbound and outbound data. Pipelines implement an advanced form of the Intercepting Filter
-//! pattern, giving you full control over how events flow through your protocol stack.
+//! Sansio provides three pipeline variants to match different ownership and threading needs:
+//!
+//! - **[`Pipeline`]**: Exclusive ownership with `&mut self` methods. Zero overhead, ideal for
+//!   per-connection TCP scenarios where one task owns the pipeline.
+//!
+//! - **[`RcPipeline`]**: Shared ownership with `Rc` wrapper and interior mutability. Methods take
+//!   `&self`, enabling shared access in single-threaded contexts. Perfect for UDP servers where
+//!   one pipeline handles messages from multiple peers.
+//!
+//! - **[`ArcPipeline`]**: Thread-safe shared ownership with `Arc` wrapper and `Mutex` synchronization.
+//!   Methods take `&self` and can be called from multiple threads. Use when you need to share a
+//!   pipeline across threads in multi-threaded servers.
+//!
+//! All pipelines are chains of [`Handler`]s that process inbound and outbound data, implementing
+//! an advanced form of the Intercepting Filter pattern.
 //!
 //! **Key Benefits:**
 //! - Modular: Each handler does one thing well (UNIX philosophy)
@@ -36,6 +48,31 @@
 //! The [`Protocol`] trait provides a simpler alternative to [`Handler`] for building Sans-IO protocols.
 //! It's fully decoupled from I/O, timers, and other runtime dependencies, making protocols easy to
 //! test and reuse across different runtime environments.
+//!
+//! ## Choosing a Pipeline Variant
+//!
+//! | Feature | Pipeline | RcPipeline | ArcPipeline |
+//! |---------|----------|------------|-------------|
+//! | Ownership | Exclusive (`&mut self`) | Shared (`Rc`) | Shared (`Arc`) |
+//! | Thread-safe | No | No | Yes |
+//! | Overhead | None | `RefCell` + `UnsafeCell` | `Mutex` |
+//! | Processing | Direct | Direct | Serialized |
+//! | Best for | TCP (per-connection) | UDP (single-threaded) | Multi-threaded servers |
+//!
+//! **Use [`Pipeline`]** when:
+//! - Each connection has its own exclusive pipeline (typical TCP server)
+//! - You want zero-cost abstractions
+//! - Single task/thread owns the pipeline
+//!
+//! **Use [`RcPipeline`]** when:
+//! - Multiple contexts need to write to the same pipeline (UDP broadcast/multicast)
+//! - Single-threaded executor (e.g., tokio `LocalSet`)
+//! - Handler needs weak reference to its own pipeline
+//!
+//! **Use [`ArcPipeline`]** when:
+//! - Pipeline must be shared across threads
+//! - Multi-threaded server architecture
+//! - Async runtime without `LocalSet` (thread pool)
 //!
 //! ## Event Flow
 //!
@@ -133,8 +170,9 @@
 //!
 //! Chain handlers together to form a complete protocol stack:
 //! ```ignore
-//! fn build_pipeline() -> Rc<Pipeline<BytesMut,String>> {
-//!     let pipeline: Pipeline<BytesMut,String> = Pipeline::new();
+//! // For TCP (exclusive ownership):
+//! fn build_pipeline() -> Pipeline<BytesMut, String> {
+//!     let mut pipeline = Pipeline::new();
 //!
 //!     let line_based_frame_decoder_handler = ByteToMessageCodecHandler::new(Box::new(
 //!         LineBasedFrameDecoder::new(8192, true, TerminatorType::BOTH),
@@ -145,7 +183,17 @@
 //!     pipeline.add_back(line_based_frame_decoder_handler);
 //!     pipeline.add_back(string_codec_handler);
 //!     pipeline.add_back(echo_server_handler);
-//!     pipeline.finalize()
+//!     pipeline.finalize();
+//!
+//!     pipeline
+//! }
+//!
+//! // For UDP (shared ownership):
+//! fn build_shared_pipeline() -> Rc<RcPipeline<BytesMut, String>> {
+//!     let mut pipeline = RcPipeline::new();
+//!     // ... add handlers ...
+//!     pipeline.finalize();
+//!     Rc::new(pipeline)
 //! }
 //! ```
 //!
@@ -283,6 +331,18 @@ pub(crate) mod pipeline;
 /// Internal pipeline types (not part of public API)
 pub(crate) mod pipeline_internal;
 
+/// Internal Rc-based pipeline types with interior mutability
+pub(crate) mod rc_pipeline_internal;
+
+/// Rc-based pipeline with interior mutability for shared ownership
+pub(crate) mod rc_pipeline;
+
+/// Internal Arc-based pipeline types with Mutex synchronization
+pub(crate) mod arc_pipeline_internal;
+
+/// Arc-based pipeline for multi-threaded usage
+pub(crate) mod arc_pipeline;
+
 /// Protocol trait for building Sans-IO protocols
 pub(crate) mod protocol;
 
@@ -296,5 +356,17 @@ pub use handler::{Context, Handler};
 /// Pipeline traits for inbound and outbound message processing
 pub use pipeline::{InboundPipeline, OutboundPipeline, Pipeline};
 
+/// Rc-based pipeline with interior mutability
+pub use rc_pipeline::{RcInboundPipeline, RcOutboundPipeline, RcPipeline};
+
+/// Arc-based pipeline for multi-threaded usage
+pub use arc_pipeline::{ArcInboundPipeline, ArcOutboundPipeline, ArcPipeline};
+
 /// Protocol trait for Sans-IO protocol implementations
 pub use protocol::Protocol;
+
+/// Callback type for write notifications across all pipeline variants
+pub type NotifyCallback = std::sync::Arc<dyn Fn() + Send + Sync>;
+
+/// Reserved handler name used internally by the pipeline's LastHandler
+pub(crate) const RESERVED_PIPELINE_HANDLE_NAME: &str = "ReservedPipelineHandlerName";

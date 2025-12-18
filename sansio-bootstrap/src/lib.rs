@@ -17,7 +17,7 @@ use tokio::{
 };
 use wg::AsyncWaitGroup;
 
-use sansio::{InboundPipeline, OutboundPipeline, Pipeline};
+use sansio::{RcInboundPipeline, RcOutboundPipeline, RcPipeline};
 use sansio_executor::spawn_local;
 use sansio_transport::{TaggedBytesMut, TransportContext};
 
@@ -33,13 +33,13 @@ pub use bootstrap_udp::{
 
 /// A pipeline bundled with its write notification mechanism
 pub(crate) struct PipelineWithNotify<R, W> {
-    pub(crate) pipeline: Rc<Pipeline<R, W>>,
+    pub(crate) pipeline: Rc<RcPipeline<R, W>>,
     pub(crate) write_notify: Arc<Notify>,
 }
 
 impl<R, W> PipelineWithNotify<R, W> {
     /// Create a new pipeline with automatic write notification setup
-    pub(crate) fn new(pipeline: Rc<Pipeline<R, W>>) -> Self
+    pub(crate) fn new(pipeline: Rc<RcPipeline<R, W>>) -> Self
     where
         R: 'static,
         W: 'static,
@@ -58,14 +58,14 @@ impl<R, W> PipelineWithNotify<R, W> {
     }
 
     /// Get a reference to the pipeline for outbound operations
-    pub(crate) fn pipeline(&self) -> &Rc<Pipeline<R, W>> {
+    pub(crate) fn pipeline(&self) -> &Rc<RcPipeline<R, W>> {
         &self.pipeline
     }
 }
 
-/// Creates a new [Pipeline]
+/// Creates a new [RcPipeline]
 pub type PipelineFactoryFn<R, W> =
-    Box<dyn Fn(SocketAddr, Option<SocketAddr>) -> Rc<Pipeline<R, W>>>;
+    Box<dyn Fn(SocketAddr, Option<SocketAddr>) -> Rc<RcPipeline<R, W>>>;
 
 const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(86400); // 1 day duration
 
