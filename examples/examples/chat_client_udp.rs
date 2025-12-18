@@ -1,8 +1,6 @@
 use clap::Parser;
 use futures::StreamExt;
 use log::info;
-use std::{io::Write, net::SocketAddr, str::FromStr, time::Instant};
-
 use sansio::{Context, Handler, Pipeline};
 use sansio_bootstrap::BootstrapUdpClient;
 use sansio_codec::{
@@ -11,6 +9,8 @@ use sansio_codec::{
 };
 use sansio_executor::LocalExecutorBuilder;
 use sansio_transport::{TaggedBytesMut, TaggedString, TransportContext, TransportProtocol};
+use std::rc::Rc;
+use std::{io::Write, net::SocketAddr, str::FromStr, time::Instant};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct ChatHandler;
@@ -127,7 +127,8 @@ fn main() -> anyhow::Result<()> {
             pipeline.add_back(line_based_frame_decoder_handler);
             pipeline.add_back(string_codec_handler);
             pipeline.add_back(echo_handler);
-            pipeline.finalize()
+            pipeline.finalize();
+            Rc::new(pipeline)
         }));
 
         bootstrap.bind(transport.local_addr).await.unwrap();

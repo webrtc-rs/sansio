@@ -700,20 +700,23 @@ impl<R: 'static, W: 'static> Pipeline<R, W> {
         internal.len()
     }
 
+    /// Finalize the pipeline, making it ready for use.
+    pub fn finalize(&self) {
+        let internal = self.internal.borrow();
+        internal.finalize();
+    }
+
     /// Updates an `Rc`-wrapped pipeline's internal structure.
     ///
     /// Called internally by [`finalize`]. You typically don't need to call this directly.
     ///
     /// [`finalize`]: Pipeline::finalize
     pub fn update(self: Rc<Self>) -> Rc<Self> {
-        {
-            let internal = self.internal.borrow();
-            internal.finalize();
-        }
+        self.finalize();
         self
     }
 
-    /// Finalizes the pipeline, making it ready for use.
+    /// Builds the pipeline, making it ready for use.
     ///
     /// This method:
     /// 1. Wraps the pipeline in `Rc` for shared ownership
@@ -744,12 +747,12 @@ impl<R: 'static, W: 'static> Pipeline<R, W> {
     /// pipeline.add_back(H1);
     ///
     /// // Finalize before use
-    /// let pipeline = pipeline.finalize();
+    /// let pipeline = pipeline.build();
     ///
     /// // Now ready to use
     /// pipeline.handle_read("Hello".to_string());
     /// ```
-    pub fn finalize(self) -> Rc<Self> {
+    pub fn build(self) -> Rc<Self> {
         let pipeline = Rc::new(self);
         pipeline.update()
     }

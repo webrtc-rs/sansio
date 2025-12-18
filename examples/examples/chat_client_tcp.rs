@@ -1,8 +1,6 @@
 use clap::Parser;
 use futures::StreamExt;
 use log::info;
-use std::{error::Error, io::Write, net::SocketAddr, str::FromStr, time::Instant};
-
 use sansio::{Context, Handler, Pipeline};
 use sansio_bootstrap::BootstrapTcpClient;
 use sansio_codec::{
@@ -11,6 +9,7 @@ use sansio_codec::{
 };
 use sansio_executor::LocalExecutorBuilder;
 use sansio_transport::{TaggedBytesMut, TaggedString, TransportContext, TransportProtocol};
+use std::{error::Error, io::Write, net::SocketAddr, str::FromStr, time::Instant};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct ChatHandler;
@@ -139,7 +138,7 @@ fn main() -> anyhow::Result<()> {
             pipeline.add_back(line_based_frame_decoder_handler);
             pipeline.add_back(string_codec_handler);
             pipeline.add_back(echo_handler);
-            pipeline.finalize()
+            pipeline.build()
         }));
 
         let pipeline = bootstrap.connect(transport.peer_addr).await.unwrap();
