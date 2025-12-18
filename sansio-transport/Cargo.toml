@@ -1,6 +1,6 @@
 [package]
 name = "sansio-transport"
-version = "0.5.1"
+version = "0.6.0"
 authors = ["Rusty Rain <y@liu.mx>"]
 edition = "2024"
 description = "Asynchronous transports with ECN information"
@@ -9,7 +9,7 @@ documentation = "https://docs.rs/sansio-transport"
 repository = "https://github.com/sansio/sansio-transport"
 homepage = "https://webrtc.rs"
 keywords = ["networking", "protocols"]
-categories = [ "network-programming", "asynchronous" ]
+categories = ["network-programming", "asynchronous"]
 
 [dependencies]
 bytes = "1.11.0"
