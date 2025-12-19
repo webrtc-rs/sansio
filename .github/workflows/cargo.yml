@@ -21,34 +21,41 @@ jobs:
         os: ['ubuntu-latest', 'macos-latest', 'windows-latest']
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Build
         run: cargo build --verbose
       - name: Run tests
         run: cargo test --verbose
+      - name: Run doc tests
+        run: cargo test --doc --verbose
+
+  no_std:
+    name: no_std compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf
+      - name: Build for no_std (embedded target)
+        run: cargo build --target thumbv7em-none-eabihf --verbose
+      - name: Build release for no_std
+        run: cargo build --target thumbv7em-none-eabihf --release --verbose
 
   rustfmt_and_clippy:
     name: Check rustfmt style && run clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.91.0
-          profile: minimal
           components: clippy, rustfmt
-          override: true
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
       - name: Run clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-      - name: Check formating
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo clippy --verbose -- -D warnings
+      - name: Check formatting
+        run: cargo fmt --all -- --check

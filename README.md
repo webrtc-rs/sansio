@@ -6,9 +6,6 @@
  <a href="https://github.com/webrtc-rs/sansio/actions">
   <img src="https://github.com/webrtc-rs/sansio/workflows/cargo/badge.svg">
  </a>
- <a href="https://deps.rs/repo/github/webrtc-rs/sansio">
-  <img src="https://deps.rs/repo/github/webrtc-rs/sansio/status.svg">
- </a>
  <a href="https://crates.io/crates/sansio">
   <img src="https://img.shields.io/crates/v/sansio.svg">
  </a>
@@ -54,6 +51,7 @@ The `Time` associated type is fully generic, so you can use any time representat
 your environment:
 
 **Using `std::time::Instant`:**
+
 ```rust
 impl Protocol<Vec<u8>, Vec<u8>, ()> for MyProtocol {
     type Time = std::time::Instant;
@@ -62,6 +60,7 @@ impl Protocol<Vec<u8>, Vec<u8>, ()> for MyProtocol {
 ```
 
 **Using tick counts (embedded):**
+
 ```rust
 impl Protocol<Vec<u8>, Vec<u8>, ()> for MyProtocol {
     type Time = u64;  // System ticks
@@ -70,6 +69,7 @@ impl Protocol<Vec<u8>, Vec<u8>, ()> for MyProtocol {
 ```
 
 **Using milliseconds:**
+
 ```rust
 impl Protocol<Vec<u8>, Vec<u8>, ()> for MyProtocol {
     type Time = i64;  // Milliseconds since epoch
@@ -78,6 +78,7 @@ impl Protocol<Vec<u8>, Vec<u8>, ()> for MyProtocol {
 ```
 
 **No timeout needed:**
+
 ```rust
 impl Protocol<Vec<u8>, Vec<u8>, ()> for MyProtocol {
     type Time = ();  // Unit type when timeouts aren't used
