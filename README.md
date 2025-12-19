@@ -22,3 +22,83 @@
 <p align="center">
  Rust in Sans-IO
 </p>
+
+# Sans-IO Protocol
+
+The `Protocol` trait provides a simpler, fully Sans-IO trait for protocol implementation.
+
+## Example
+
+```rust
+use sansio::Protocol;
+use std::collections::VecDeque;
+
+#[derive(Debug)]
+struct MyError;
+impl std::fmt::Display for MyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "MyError")
+    }
+}
+impl std::error::Error for MyError {}
+
+/// A simple uppercase protocol: converts incoming strings to uppercase
+struct UppercaseProtocol {
+    routs: VecDeque<String>,
+    wouts: VecDeque<String>,
+}
+
+impl UppercaseProtocol {
+    fn new() -> Self {
+        Self {
+            wouts: VecDeque::new(),
+        }
+    }
+}
+
+impl Protocol<String, String, ()> for UppercaseProtocol {
+    type Rout = String;
+    type Wout = String;
+    type Eout = ();
+    type Error = MyError;
+
+    fn handle_read(&mut self, msg: String) -> Result<(), Self::Error> {
+        // Process incoming message
+        self.routs.push_back(msg.to_uppercase());
+        Ok(())
+    }
+
+    fn poll_read(&mut self) -> Option<Self::Rout> {
+        // Return processed message
+        self.routs.pop_front()
+    }
+
+    fn handle_write(&mut self, msg: String) -> Result<(), Self::Error> {
+        // For this simple protocol, just pass through
+        self.wouts.push_back(msg);
+        Ok(())
+    }
+
+    fn poll_write(&mut self) -> Option<Self::Wout> {
+        self.wouts.pop_front()
+    }
+}
+```
+
+## Quick Start
+
+Add `sansio` to your `Cargo.toml`:
+
+```toml
+[dependencies]
+sansio = "x.x.x"
+```
+
+## License
+
+Licensed under either of:
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](../LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](../LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.

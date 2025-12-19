@@ -93,20 +93,13 @@
 //! // Pull results out
 //! assert_eq!(protocol.poll_read(), Some("HELLO".to_string()));
 //! ```
-//!
-//! ## Comparison with Handler
-//!
-//! The [`Protocol`] trait is simpler than [`Handler`](crate::Handler):
-//!
-//! | Feature | Protocol | Handler |
-//! |---------|----------|---------|
-//! | Complexity | Simple | More complex |
-//! | Context | No context object | Has context |
-//! | Composition | Manual | Pipeline |
-//! | Best for | Single protocols | Protocol stacks |
-//!
-//! Use `Protocol` when you want a simple, self-contained protocol.
-//! Use `Handler` when building complex protocol pipelines.
+
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/webrtc-rs/sansio/master/doc/sansio-white.png"
+)]
+#![warn(rust_2018_idioms)]
+#![allow(dead_code)]
+#![warn(missing_docs)]
 
 use std::time::Instant;
 
