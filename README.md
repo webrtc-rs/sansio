@@ -121,7 +121,7 @@ Add `sansio` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sansio = "0.10"
+sansio = "1"
 ```
 
 ## Example: Uppercase Protocol
